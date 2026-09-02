@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS public.business_profile (
     ifsc TEXT DEFAULT '',
     signature_url TEXT DEFAULT '',
     upi_id TEXT DEFAULT '',
+    full_name TEXT DEFAULT '',
+    last_login_at TIMESTAMPTZ DEFAULT now(),
     terms_conditions TEXT DEFAULT '1. Goods once sold will not be taken back.
 2. Payment due within 15 days of invoice date.
 3. Subject to local jurisdiction.',
@@ -278,3 +280,25 @@ ALTER TABLE public.gstin_lookup_log ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "gll_select" ON public.gstin_lookup_log FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "gll_insert" ON public.gstin_lookup_log FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+
+-- ==============================================================================
+-- 10. Auth Activity Logs (Security Auditing & Login History)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.auth_activity_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    ip_address TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_logs_user_id ON public.auth_activity_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_logs_email ON public.auth_activity_logs(email, created_at DESC);
+
+ALTER TABLE public.auth_activity_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "aal_select" ON public.auth_activity_logs FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "aal_insert" ON public.auth_activity_logs FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "aal_insert_anon" ON public.auth_activity_logs FOR INSERT TO anon WITH CHECK (true);

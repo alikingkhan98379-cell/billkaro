@@ -7,6 +7,8 @@ export interface BusinessProfile {
   id: string;
   user_id: string;
   name: string;
+  full_name?: string;
+  last_login_at?: string;
   address: string;
   phone: string;
   email: string;
@@ -110,5 +112,15 @@ export interface SubscriptionRequest {
   screenshot_url: string;
   amount: number;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  created_at: string;
+}
+
+export interface AuthActivityLog {
+  id: string;
+  user_id: string;
+  email: string;
+  event_type: string;
+  ip_address?: string;
+  user_agent?: string;
   created_at: string;
 }

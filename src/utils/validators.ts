@@ -43,3 +43,23 @@ export function sanitizeText(text: string): string {
   if (!text) return '';
   return text.trim().replace(/[<>]/g, '');
 }
+
+export interface PasswordValidation {
+  isValid: boolean;
+  hasLength: boolean;
+  hasUpper: boolean;
+  hasLower: boolean;
+  hasNumber: boolean;
+  hasSpecial: boolean;
+}
+
+export function validateStrongPassword(password: string): PasswordValidation {
+  const p = password || '';
+  const hasLength = p.length >= 8;
+  const hasUpper = /[A-Z]/.test(p);
+  const hasLower = /[a-z]/.test(p);
+  const hasNumber = /[0-9]/.test(p);
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]/.test(p);
+  const isValid = hasLength && hasUpper && hasLower && hasNumber && hasSpecial;
+  return { isValid, hasLength, hasUpper, hasLower, hasNumber, hasSpecial };
+}

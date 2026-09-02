@@ -6,59 +6,77 @@ import {
   ArrowRight, 
   RefreshCw, 
   Building2, 
+  User as UserIcon,
   Lock, 
   Sparkles,
   CheckCircle2,
   AlertCircle,
   Clock,
-  UserCheck
+  Eye,
+  EyeOff,
+  ShieldAlert
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { isValidEmail } from '../utils/validators';
+import { isValidEmail, validateStrongPassword } from '../utils/validators';
+import { PasswordStrengthChecker } from '../components/common/PasswordStrengthChecker';
+
+type AuthScreen = 
+  | 'login' 
+  | 'signup' 
+  | 'login_2fa' 
+  | 'signup_otp' 
+  | 'forgot_email' 
+  | 'forgot_reset';
 
 export const AuthPage: React.FC = () => {
   const { 
-    sendOtp, 
-    verifyOtp, 
-    signInWithPassword,
-    resetPassword,
     signInWithGoogle,
+    sendSignupOtp,
+    completeSignupWithOtp,
+    loginWithPassword,
+    verify2FAAndLogin,
+    sendForgotPasswordOtp,
+    completeForgotPassword,
     isRateLimited,
     rateLimitSecondsLeft 
   } = useAuth();
 
-  // Mode: 'signup' | 'signin' | 'password_2fa'
-  const [authMode, setAuthMode] = useState<'signup' | 'signin' | 'password_2fa'>('signup');
+  // Screen Navigation
+  const [screen, setScreen] = useState<AuthScreen>('login');
 
   // Form Fields
+  const [fullName, setFullName] = useState<string>('');
   const [businessName, setBusinessName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
   
-  // OTP flow status: 'input_details' | 'input_otp'
-  const [otpStep, setOtpStep] = useState<'input_details' | 'input_otp'>('input_details');
+  // Show / Hide Password Toggles
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
+
+  // Timers
   const [resendSeconds, setResendSeconds] = useState<number>(0);
-  const [otpExpirySeconds, setOtpExpirySeconds] = useState<number>(120); // 2 minutes (120 seconds)
-  
-  // UI states
+  const [otpExpirySeconds, setOtpExpirySeconds] = useState<number>(300); // 5 minutes
+
+  // UI State
   const [loading, setLoading] = useState<boolean>(false);
   const [googleLoading, setGoogleLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
-  const [forgotModalOpen, setForgotModalOpen] = useState<boolean>(false);
-  const [forgotEmail, setForgotEmail] = useState<string>('');
+  const [infoMessage, setInfoMessage] = useState<string>('');
 
-  // Countdown for OTP Expiry (2m = 120s) and Resend (30s)
+  // OTP Expiry Countdown (5 mins) & Resend Cooldown (30s)
   useEffect(() => {
     let interval: any;
-    if (otpStep === 'input_otp' && otpExpirySeconds > 0) {
+    if (['login_2fa', 'signup_otp', 'forgot_reset'].includes(screen) && otpExpirySeconds > 0) {
       interval = setInterval(() => {
         setOtpExpirySeconds(prev => (prev <= 1 ? 0 : prev - 1));
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [otpStep, otpExpirySeconds]);
+  }, [screen, otpExpirySeconds]);
 
   useEffect(() => {
     let interval: any;
@@ -73,93 +91,135 @@ export const AuthPage: React.FC = () => {
   const formatTimer = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  const handleGoogleSignIn = async () => {
+  const resetFormState = () => {
     setErrorMessage('');
+    setSuccessMessage('');
+    setInfoMessage('');
+    setOtp('');
+  };
+
+  // 1. Google 1-Click Sign In
+  const handleGoogleSignIn = async () => {
+    resetFormState();
     setGoogleLoading(true);
     const { error } = await signInWithGoogle();
     setGoogleLoading(false);
-    if (error) {
-      setErrorMessage(error);
-    }
+    if (error) setErrorMessage(error);
   };
 
-  const handleSendOtp = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    if (authMode === 'signup' && !businessName.trim()) {
-      setErrorMessage('Please enter your Business / Full Name.');
-      return;
-    }
-
-    if (!isValidEmail(email)) {
-      setErrorMessage('Please enter a valid Gmail / Email address.');
-      return;
-    }
-
-    setLoading(true);
-    const { error } = await sendOtp(email, authMode === 'signup' ? businessName : undefined);
-    setLoading(false);
-
-    if (error) {
-      setErrorMessage(error);
-    } else {
-      setOtpStep('input_otp');
-      setResendSeconds(30);
-      setOtpExpirySeconds(120); // 2 minutes (120s)
-      setSuccessMessage('8-character security code sent from smartgstbill@gmail.com. Valid for 2 minutes.');
-    }
-  };
-
-  const handlePasswordWith2FASubmit = async (e: React.FormEvent) => {
+  // 2. Normal Login / 5+ Days Inactive Check
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
+    resetFormState();
 
     if (!isValidEmail(email)) {
       setErrorMessage('Please enter a valid email address.');
       return;
     }
-    if (!password || password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters.');
+    if (!password) {
+      setErrorMessage('Please enter your password.');
       return;
     }
 
     setLoading(true);
-    // 1. First trigger OTP send to email from smartgstbill@gmail.com
-    const { error } = await sendOtp(email);
+    const result = await loginWithPassword(email, password);
     setLoading(false);
 
-    if (error) {
-      setErrorMessage(error);
-    } else {
-      setOtpStep('input_otp');
+    if (result.error) {
+      setErrorMessage(result.error);
+    } else if (result.requires2FA) {
+      // 5+ days inactive -> Switch to 2FA screen
+      setScreen('login_2fa');
       setResendSeconds(30);
-      setOtpExpirySeconds(120); // 2 minutes (120s)
-      setSuccessMessage('Password verified! 2-Step OTP code sent from smartgstbill@gmail.com (Valid for 2 minutes).');
+      setOtpExpirySeconds(300);
+      setInfoMessage(result.message || "For your security, since it's been over 5 days, we've sent a 6-digit verification code to your email.");
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
+  // 3. Verify 2FA OTP for Inactive Login
+  const handle2FAVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
     if (otpExpirySeconds <= 0) {
-      setErrorMessage('This OTP has expired (2 minutes limit). Please click "Resend OTP" to get a new code.');
+      setErrorMessage('This verification code has expired. Please click Resend OTP.');
       return;
     }
-
-    if (!otp || otp.trim().length < 5) {
-      setErrorMessage('Please enter the complete OTP code.');
+    if (!otp || otp.trim().length < 6) {
+      setErrorMessage('Please enter the complete 6-digit OTP code.');
       return;
     }
 
     setLoading(true);
-    const { error } = await verifyOtp(email, otp, authMode === 'signup' ? businessName : undefined);
+    const result = await verify2FAAndLogin(email, otp);
+    setLoading(false);
+
+    if (result.error) {
+      setErrorMessage(result.error);
+    }
+  };
+
+  // 4. Signup Step 1: Send Registration OTP
+  const handleSignupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    resetFormState();
+
+    if (!fullName.trim()) {
+      setErrorMessage('Please enter your Full Name.');
+      return;
+    }
+    if (!businessName.trim()) {
+      setErrorMessage('Please enter your Business or Firm Name.');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setErrorMessage('Please enter a valid business email address.');
+      return;
+    }
+
+    const passCheck = validateStrongPassword(password);
+    if (!passCheck.isValid) {
+      setErrorMessage('Please meet all strong password requirements before continuing.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match. Please re-check.');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await sendSignupOtp(email, fullName, businessName);
+    setLoading(false);
+
+    if (error) {
+      setErrorMessage(error);
+    } else {
+      setScreen('signup_otp');
+      setResendSeconds(30);
+      setOtpExpirySeconds(300);
+      setSuccessMessage(`6-digit verification code sent to ${email}. Valid for 5 minutes.`);
+    }
+  };
+
+  // 5. Signup Step 2: Verify OTP & Activate Account
+  const handleSignupOtpVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (otpExpirySeconds <= 0) {
+      setErrorMessage('This verification code has expired. Please request a new code.');
+      return;
+    }
+    if (!otp || otp.trim().length < 6) {
+      setErrorMessage('Please enter the complete 6-digit OTP code.');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await completeSignupWithOtp(email, otp, password, fullName, businessName);
     setLoading(false);
 
     if (error) {
@@ -167,24 +227,60 @@ export const AuthPage: React.FC = () => {
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  // 6. Forgot Password Step 1: Send Reset Code
+  const handleForgotEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValidEmail(forgotEmail)) {
-      setErrorMessage('Please enter a valid email.');
+    resetFormState();
+
+    if (!isValidEmail(email)) {
+      setErrorMessage('Please enter a valid email address.');
       return;
     }
+
     setLoading(true);
-    const { error } = await sendOtp(forgotEmail);
+    const result = await sendForgotPasswordOtp(email);
     setLoading(false);
-    if (error) {
-      setErrorMessage(error);
+
+    if (result.error) {
+      setErrorMessage(result.error);
     } else {
-      setEmail(forgotEmail);
-      setForgotModalOpen(false);
-      setOtpStep('input_otp');
+      setScreen('forgot_reset');
       setResendSeconds(30);
-      setOtpExpirySeconds(120);
-      setSuccessMessage('Password reset OTP sent to ' + forgotEmail + ' (Valid for 2 minutes).');
+      setOtpExpirySeconds(300);
+      setSuccessMessage(result.message);
+    }
+  };
+
+  // 7. Forgot Password Step 2: Verify OTP & Set New Password
+  const handleForgotResetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (otpExpirySeconds <= 0) {
+      setErrorMessage('This code has expired. Please click Resend Code.');
+      return;
+    }
+    if (!otp || otp.trim().length < 6) {
+      setErrorMessage('Please enter the 6-digit OTP code sent to your email.');
+      return;
+    }
+
+    const passCheck = validateStrongPassword(password);
+    if (!passCheck.isValid) {
+      setErrorMessage('Please meet all strong password requirements.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMessage('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
+    const result = await completeForgotPassword(email, otp, password);
+    setLoading(false);
+
+    if (result.error) {
+      setErrorMessage(result.error);
     }
   };
 
@@ -196,8 +292,8 @@ export const AuthPage: React.FC = () => {
 
       {/* Brand Header */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center z-10">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-2xl shadow-xl mb-4 border border-white/10">
-          ?
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-2xl shadow-xl mb-3 border border-white/10">
+          ⚡
         </div>
         <h1 className="text-3xl font-black text-white tracking-tight">
           BillKaro
@@ -208,111 +304,95 @@ export const AuthPage: React.FC = () => {
       </div>
 
       {/* Main Card */}
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md z-10 px-4">
-        <div className="bg-white py-8 px-6 sm:px-8 shadow-2xl rounded-3xl border border-slate-100 space-y-6">
+      <div className="mt-7 sm:mx-auto sm:w-full sm:max-w-md z-10 px-4">
+        <div className="bg-white py-8 px-6 sm:px-8 shadow-2xl rounded-3xl border border-slate-100 space-y-5">
           
-          {/* 1-CLICK GOOGLE SIGN IN BUTTON */}
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={googleLoading || loading}
-            className="w-full py-3 px-4 bg-white hover:bg-slate-50 border-2 border-slate-200 hover:border-slate-300 text-slate-800 text-sm font-bold rounded-2xl transition shadow-xs flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
-          >
-            {googleLoading ? (
-              <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
-            ) : (
-              <>
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-                <span>Continue with Google</span>
-              </>
-            )}
-          </button>
+          {/* 1-CLICK GOOGLE SIGN IN BUTTON (Always available on main screens) */}
+          {(screen === 'login' || screen === 'signup') && (
+            <>
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={googleLoading || loading}
+                className="w-full py-3 px-4 bg-white hover:bg-slate-50 border-2 border-slate-200 hover:border-slate-300 text-slate-800 text-sm font-bold rounded-2xl transition shadow-xs flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
+              >
+                {googleLoading ? (
+                  <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                    <span>Continue with Google</span>
+                  </>
+                )}
+              </button>
 
-          {/* OR DIVIDER */}
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-slate-200 w-full" />
-            <span className="bg-white px-3 text-[11px] font-bold text-slate-400 tracking-wider uppercase shrink-0">
-              or use secure email otp
-            </span>
-            <div className="border-t border-slate-200 w-full" />
-          </div>
+              {/* OR DIVIDER */}
+              <div className="relative flex items-center justify-center">
+                <div className="border-t border-slate-200 w-full" />
+                <span className="bg-white px-3 text-[11px] font-bold text-slate-400 tracking-wider uppercase shrink-0">
+                  or with email & password
+                </span>
+                <div className="border-t border-slate-200 w-full" />
+              </div>
 
-          {/* Mode Switch Tabs: Sign Up vs Sign In vs Password 2FA */}
-          {otpStep === 'input_details' && (
-            <div className="flex p-1 bg-slate-100 rounded-xl gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('signup');
-                  setErrorMessage('');
-                  setSuccessMessage('');
-                }}
-                className={
-                  'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
-                  (authMode === 'signup'
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900')
-                }
-              >
-                Create Account
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('signin');
-                  setErrorMessage('');
-                  setSuccessMessage('');
-                }}
-                className={
-                  'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
-                  (authMode === 'signin'
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900')
-                }
-              >
-                Direct OTP Login
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('password_2fa');
-                  setErrorMessage('');
-                  setSuccessMessage('');
-                }}
-                className={
-                  'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
-                  (authMode === 'password_2fa'
-                    ? 'bg-white text-blue-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900')
-                }
-              >
-                Password + 2FA
-              </button>
-            </div>
+              {/* Mode Switch Tabs: Sign In vs Sign Up */}
+              <div className="flex p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen('login');
+                    resetFormState();
+                  }}
+                  className={
+                    'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+                    (screen === 'login'
+                      ? 'bg-white text-blue-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900')
+                  }
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen('signup');
+                    resetFormState();
+                  }}
+                  className={
+                    'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+                    (screen === 'signup'
+                      ? 'bg-white text-blue-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900')
+                  }
+                >
+                  Create Account
+                </button>
+              </div>
+            </>
           )}
 
           {/* Rate Limit Alert */}
           {isRateLimited && (
             <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>Too many login attempts. Cooldown active: {rateLimitSecondsLeft}s</span>
+              <span>Account temporarily locked due to repeated failed attempts. Cooldown active: {Math.ceil(rateLimitSecondsLeft / 60)}m ({rateLimitSecondsLeft}s)</span>
             </div>
           )}
 
@@ -324,6 +404,14 @@ export const AuthPage: React.FC = () => {
             </div>
           )}
 
+          {/* Info / Notice Message */}
+          {infoMessage && (
+            <div className="p-3.5 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl flex items-start gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <span>{infoMessage}</span>
+            </div>
+          )}
+
           {/* Success Message */}
           {successMessage && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
@@ -332,166 +420,120 @@ export const AuthPage: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 1: Enter Details */}
-          {otpStep === 'input_details' ? (
-            authMode === 'password_2fa' ? (
-              /* PASSWORD + 2FA LOGIN */
-              <form onSubmit={handlePasswordWith2FASubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Email Address
+          {/* ================================================================ */}
+          {/* SCREEN 1: NORMAL SIGN IN (EMAIL + PASSWORD)                      */}
+          {/* ================================================================ */}
+          {screen === 'login' && (
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="name@business.com"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Password
                   </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="name@business.com"
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScreen('forgot_email');
+                      resetFormState();
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
                 </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-slate-700">
-                      Account Password
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setForgotModalOpen(true)}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                    <input
-                      type="password"
-                      required
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="��������"
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
-                    />
-                  </div>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
+              </div>
 
-                <button
-                  type="submit"
-                  disabled={loading || isRateLimited}
-                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {loading ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <span>Verify & Send 2-Min OTP</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-
-                <p className="text-[11px] text-center text-slate-400">
-                  Password verify hone ke baad aapke email par 2-minute OTP aayega.
-                </p>
-              </form>
-            ) : (
-              /* SIGN UP OR DIRECT OTP SIGN IN */
-              <form onSubmit={handleSendOtp} className="space-y-4">
-                {authMode === 'signup' && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                      Your Name or Business / Firm Name
-                    </label>
-                    <div className="relative">
-                      <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                      <input
-                        type="text"
-                        required
-                        value={businessName}
-                        onChange={e => setBusinessName(e.target.value)}
-                        placeholder="e.g. Maaz Star Traders"
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
-                      />
-                    </div>
-                  </div>
+              <button
+                type="submit"
+                disabled={loading || isRateLimited}
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <span>Sign In to BillKaro</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
                 )}
+              </button>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Gmail / Business Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="yourname@gmail.com"
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
-                    />
-                  </div>
-                </div>
+              <p className="text-[11px] text-center text-slate-400">
+                Active users log in instantly. Inactivity for 5+ days triggers a 6-digit 2FA email code.
+              </p>
+            </form>
+          )}
 
-                <button
-                  type="submit"
-                  disabled={loading || isRateLimited}
-                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  {loading ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <span>
-                        {authMode === 'signup' ? 'Send 2-Min OTP to Register' : 'Send 2-Min Login OTP'}
-                      </span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-
-                <p className="text-[11px] text-center text-slate-400">
-                  OTP will be sent from smartgstbill@gmail.com � Valid strictly for 2 minutes.
-                </p>
-              </form>
-            )
-          ) : (
-            /* STEP 2: Enter 8-character OTP (2-Minute Countdown) */
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
+          {/* ================================================================ */}
+          {/* SCREEN 2: 2FA OTP VERIFICATION (WHEN INACTIVE FOR 5+ DAYS)       */}
+          {/* ================================================================ */}
+          {screen === 'login_2fa' && (
+            <form onSubmit={handle2FAVerify} className="space-y-4">
               <div className="text-center pb-1">
-                <p className="text-xs text-slate-600">
-                  Enter the 8-character security code sent to <br />
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 text-blue-600 mb-2">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">2-Step Security Verification</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Enter the 6-digit security code sent to <br />
                   <span className="font-bold text-slate-900">{email}</span>
                 </p>
-                {/* 2-Minute Countdown Badge */}
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
                   <Clock className="w-3.5 h-3.5 text-amber-600" />
                   <span>
-                    {otpExpirySeconds > 0 
-                      ? ('Code valid for: ' + formatTimer(otpExpirySeconds)) 
-                      : 'Code expired (2 min limit)'}
+                    {otpExpirySeconds > 0 ? `Code expires in: ${formatTimer(otpExpirySeconds)}` : 'Code expired'}
                   </span>
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 text-center">
-                  8-character Security Code (OTP)
+                  6-Digit Verification Code (OTP)
                 </label>
                 <input
                   type="text"
-                  maxLength={12}
+                  maxLength={8}
                   required
                   autoFocus
                   value={otp}
                   onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
-                  placeholder="� � � � � � � �"
-                  className="w-full text-center tracking-[0.25em] text-2xl font-black py-3 px-2 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
+                  placeholder="• • • • • •"
+                  className="w-full text-center tracking-[0.4em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
                 />
               </div>
 
@@ -500,82 +542,414 @@ export const AuthPage: React.FC = () => {
                 disabled={loading || isRateLimited || otpExpirySeconds <= 0}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
               >
-                {loading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  'Verify Code & Open BillKaro'
-                )}
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Verify Code & Access Dashboard'}
               </button>
 
               <div className="flex items-center justify-between text-xs pt-1">
                 <button
                   type="button"
                   onClick={() => {
-                    setOtpStep('input_details');
-                    setOtp('');
+                    setScreen('login');
+                    resetFormState();
                   }}
                   className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
                 >
-                  ? Change Email
+                  ← Back to Login
                 </button>
 
                 <button
                   type="button"
                   disabled={resendSeconds > 0 || loading || isRateLimited}
-                  onClick={() => handleSendOtp()}
+                  onClick={async () => {
+                    setLoading(true);
+                    await loginWithPassword(email, password);
+                    setLoading(false);
+                    setResendSeconds(30);
+                    setOtpExpirySeconds(300);
+                  }}
                   className="text-blue-600 hover:text-blue-800 font-bold disabled:text-slate-400 cursor-pointer"
                 >
-                  {resendSeconds > 0 ? ('Resend in ' + resendSeconds + 's') : 'Resend OTP'}
+                  {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend Code'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ================================================================ */}
+          {/* SCREEN 3: SIGN UP (NEW ACCOUNT) FORM                             */}
+          {/* ================================================================ */}
+          {screen === 'signup' && (
+            <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Full Name *
+                </label>
+                <div className="relative">
+                  <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="Rahul Sharma"
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Business / Firm Name *
+                </label>
+                <div className="relative">
+                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    required
+                    value={businessName}
+                    onChange={e => setBusinessName(e.target.value)}
+                    placeholder="Sharma Enterprises"
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Business Email Address *
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="name@business.com"
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Create Account Password *
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {/* Real-time Password Strength Checklist */}
+                <PasswordStrengthChecker password={password} showChecklist={true} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Confirm Password *
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="text-[11px] text-rose-600 font-bold mt-1">Passwords do not match</p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || isRateLimited}
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer mt-2"
+              >
+                {loading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <span>Send 6-Digit Verification Code</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {/* ================================================================ */}
+          {/* SCREEN 4: SIGNUP OTP VERIFICATION                                */}
+          {/* ================================================================ */}
+          {screen === 'signup_otp' && (
+            <form onSubmit={handleSignupOtpVerify} className="space-y-4">
+              <div className="text-center pb-1">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 text-blue-600 mb-2">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">Verify Your Email</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Enter the 6-digit activation code sent to <br />
+                  <span className="font-bold text-slate-900">{email}</span>
+                </p>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>
+                    {otpExpirySeconds > 0 ? `Code expires in: ${formatTimer(otpExpirySeconds)}` : 'Code expired'}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-center">
+                  6-Digit Verification Code (OTP)
+                </label>
+                <input
+                  type="text"
+                  maxLength={8}
+                  required
+                  autoFocus
+                  value={otp}
+                  onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
+                  placeholder="• • • • • •"
+                  className="w-full text-center tracking-[0.4em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || isRateLimited || otpExpirySeconds <= 0}
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Verify Code & Activate Account'}
+              </button>
+
+              <div className="flex items-center justify-between text-xs pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen('signup');
+                    resetFormState();
+                  }}
+                  className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                >
+                  ← Change Details
+                </button>
+
+                <button
+                  type="button"
+                  disabled={resendSeconds > 0 || loading || isRateLimited}
+                  onClick={() => handleSignupSubmit({ preventDefault: () => {} } as any)}
+                  className="text-blue-600 hover:text-blue-800 font-bold disabled:text-slate-400 cursor-pointer"
+                >
+                  {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend Code'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ================================================================ */}
+          {/* SCREEN 5: FORGOT PASSWORD - STEP 1 (EMAIL INPUT)                 */}
+          {/* ================================================================ */}
+          {screen === 'forgot_email' && (
+            <form onSubmit={handleForgotEmailSubmit} className="space-y-4">
+              <div className="text-center pb-1">
+                <h3 className="text-base font-bold text-slate-900">Reset Account Password</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Enter your registered email and we'll send a 6-digit OTP code to verify your identity.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Registered Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="name@business.com"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || isRateLimited}
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Send 6-Digit Reset Code'}
+              </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen('login');
+                    resetFormState();
+                  }}
+                  className="text-xs text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                >
+                  ← Back to Login
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ================================================================ */}
+          {/* SCREEN 6: FORGOT PASSWORD - STEP 2 (ENTER OTP & NEW PASSWORD)    */}
+          {/* ================================================================ */}
+          {screen === 'forgot_reset' && (
+            <form onSubmit={handleForgotResetSubmit} className="space-y-4">
+              <div className="text-center pb-1">
+                <h3 className="text-base font-bold text-slate-900">Set New Password</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Enter the 6-digit OTP sent to <br />
+                  <span className="font-bold text-slate-900">{email}</span>
+                </p>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>
+                    {otpExpirySeconds > 0 ? `Code expires in: ${formatTimer(otpExpirySeconds)}` : 'Code expired'}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 text-center">
+                  6-Digit OTP Code
+                </label>
+                <input
+                  type="text"
+                  maxLength={8}
+                  required
+                  autoFocus
+                  value={otp}
+                  onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
+                  placeholder="• • • • • •"
+                  className="w-full text-center tracking-[0.4em] text-2xl font-black py-2.5 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono uppercase"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  New Strong Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <PasswordStrengthChecker password={password} showChecklist={true} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="text-[11px] text-rose-600 font-bold mt-1">Passwords do not match</p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || isRateLimited || otpExpirySeconds <= 0}
+                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Set New Password & Log In'}
+              </button>
+
+              <div className="flex items-center justify-between text-xs pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScreen('login');
+                    resetFormState();
+                  }}
+                  className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                >
+                  ← Back to Login
+                </button>
+
+                <button
+                  type="button"
+                  disabled={resendSeconds > 0 || loading || isRateLimited}
+                  onClick={handleForgotEmailSubmit}
+                  className="text-blue-600 hover:text-blue-800 font-bold disabled:text-slate-400 cursor-pointer"
+                >
+                  {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend Code'}
                 </button>
               </div>
             </form>
           )}
 
           {/* Security Guarantee Box */}
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-500 font-medium">
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-500 font-medium">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
             <span>Bank-grade 256-bit SSL & Supabase RLS Isolated</span>
           </div>
         </div>
       </div>
-
-      {/* Forgot Password Modal */}
-      {forgotModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-900 mb-2">Reset Password</h3>
-            <p className="text-xs text-slate-600 mb-4">
-              Enter your registered email and we will send a 2-minute OTP from smartgstbill@gmail.com.
-            </p>
-            <form onSubmit={handleForgotPassword} className="space-y-4">
-              <input
-                type="email"
-                required
-                value={forgotEmail}
-                onChange={e => setForgotEmail(e.target.value)}
-                placeholder="yourname@business.com"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setForgotModalOpen(false)}
-                  className="flex-1 py-2 text-xs font-semibold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-2 text-xs font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
-                >
-                  Send 2-Min OTP
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+
