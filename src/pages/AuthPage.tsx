@@ -153,8 +153,8 @@ export const AuthPage: React.FC = () => {
       return;
     }
 
-    if (!otp || otp.trim().length < 6) {
-      setErrorMessage('Please enter the complete 8-character OTP code.');
+    if (!otp || otp.trim().length < 5) {
+      setErrorMessage('Please enter the complete OTP code.');
       return;
     }
 
@@ -485,13 +485,13 @@ export const AuthPage: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  maxLength={6}
+                  maxLength={12}
                   required
                   autoFocus
                   value={otp}
-                  onChange={e => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
-                  placeholder="� � � � � �"
-                  className="w-full text-center tracking-[0.5em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono"
+                  onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
+                  placeholder="� � � � � � � �"
+                  className="w-full text-center tracking-[0.25em] text-2xl font-black py-3 px-2 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
                 />
               </div>
 
