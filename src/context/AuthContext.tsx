@@ -206,30 +206,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // 1. Check User Auth Status & Providers (Server-side RPC with fallback)
+  // 1. Check User Auth Status (Server-side authoritative check via Supabase Auth)
   const checkUserAuthStatus = async (email: string): Promise<UserAuthStatus> => {
     const cleanEmail = email.trim().toLowerCase();
     try {
-      const { data, error } = await supabase.rpc('check_user_auth_status', {
-        lookup_email: cleanEmail
+      // 1. Direct authoritative Supabase Auth Server check:
+      // When shouldCreateUser: false is requested, Supabase Auth server checks auth.users directly.
+      // - If user DOES NOT exist: Returns 422 / otp_disabled ("Signups not allowed for otp")
+      // - If user ALREADY exists (Google or Email): Returns success (error: null)
+      const { error } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: { shouldCreateUser: false }
       });
 
-      if (!error && data && typeof data === 'object') {
-        return data as UserAuthStatus;
+      if (error) {
+        if (
+          error.status === 422 || 
+          error.code === 'otp_disabled' || 
+          (error.message && error.message.toLowerCase().includes('signups not allowed')) ||
+          (error.message && error.message.toLowerCase().includes('user not found'))
+        ) {
+          return { exists: false };
+        }
+        // If there's an error like rate limit or network, fall through to secondary check
+      } else {
+        // No error returned -> The user definitely exists in Supabase Auth!
+        return { exists: true };
       }
     } catch (e) {
-      // Fall through to fallback
+      // Fall through to secondary check
     }
 
     try {
-      const { data: profile } = await supabase
-        .from('business_profile')
-        .select('id, email')
-        .ilike('email', cleanEmail)
-        .maybeSingle();
+      // 2. Secondary check via RPC if available
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('check_user_auth_status', {
+        lookup_email: cleanEmail
+      });
 
-      if (profile) {
-        return { exists: true, has_google: false, has_password: true, provider: 'email' };
+      if (!rpcErr && rpcData && typeof rpcData === 'object' && rpcData.exists) {
+        return rpcData as UserAuthStatus;
       }
     } catch (e) {
       // ignore
@@ -254,7 +269,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 2. Signup: Step 1 - Send 6-Digit Email OTP (With Strict Server-Side Duplicate Check)
+  // 2. Signup: Step 1 - Send 6-Digit Email OTP (Strict Server-Side Pre-Check)
   const sendSignupOtp = async (
     email: string, 
     fullName: string, 
@@ -276,28 +291,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      // SERVER-SIDE DUPLICATE ACCOUNT CHECK
+      // STEP A: STRICT SERVER-SIDE DUPLICATE ACCOUNT CHECK
       const authStatus = await checkUserAuthStatus(cleanEmail);
 
       if (authStatus.exists) {
-        // Scenario 2: User already signed up with Google, now tries Email+Password signup
-        if (authStatus.has_google && !authStatus.has_password) {
-          await logActivity('SIGNUP_BLOCKED_GOOGLE_EXISTS', cleanEmail);
-          return {
-            error: "An account with this email already exists. Please sign in with Google, or use 'Forgot Password' to set a password for this account.",
-            errorCode: 'GOOGLE_EXISTS'
-          };
-        }
-
-        // Scenario 4: User already has an Email+Password account
-        await logActivity('SIGNUP_BLOCKED_EMAIL_EXISTS', cleanEmail);
+        await logActivity('SIGNUP_BLOCKED_ALREADY_EXISTS', cleanEmail);
         return {
-          error: "An account with this email already exists. Try logging in instead.",
-          errorCode: 'EMAIL_EXISTS'
+          error: "This email is already registered. Please log in instead.",
+          errorCode: 'ALREADY_EXISTS'
         };
       }
 
-      // No existing account: Send 6-Digit OTP for new signup
+      // STEP B: Brand new user -> Send 6-Digit OTP for account activation
       const { error } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
@@ -310,11 +315,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        if (error.message.toLowerCase().includes('already') || error.message.toLowerCase().includes('registered')) {
-          await logActivity('SIGNUP_BLOCKED_EMAIL_EXISTS', cleanEmail);
+        if (
+          error.message.toLowerCase().includes('already') || 
+          error.message.toLowerCase().includes('registered') ||
+          error.message.toLowerCase().includes('exists')
+        ) {
+          await logActivity('SIGNUP_BLOCKED_ALREADY_EXISTS', cleanEmail);
           return {
-            error: "An account with this email already exists. Try logging in instead.",
-            errorCode: 'EMAIL_EXISTS'
+            error: "This email is already registered. Please log in instead.",
+            errorCode: 'ALREADY_EXISTS'
           };
         }
         return { error: error.message, errorCode: 'GENERIC_ERROR' };

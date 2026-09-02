@@ -134,7 +134,8 @@ export interface UserAuthStatus {
 
 export interface SignupOtpResponse {
   error?: string;
-  errorCode?: 'GOOGLE_EXISTS' | 'EMAIL_EXISTS' | 'RATE_LIMITED' | 'GENERIC_ERROR';
+  errorCode?: 'ALREADY_EXISTS' | 'GOOGLE_EXISTS' | 'EMAIL_EXISTS' | 'RATE_LIMITED' | 'GENERIC_ERROR';
   message?: string;
 }
+
 
