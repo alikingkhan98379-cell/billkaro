@@ -111,7 +111,7 @@ export const AuthPage: React.FC = () => {
       setOtpStep('input_otp');
       setResendSeconds(30);
       setOtpExpirySeconds(120); // 2 minutes (120s)
-      setSuccessMessage('6-digit security code sent from smartgstbill@gmail.com. Valid for 2 minutes.');
+      setSuccessMessage('8-character security code sent from smartgstbill@gmail.com. Valid for 2 minutes.');
     }
   };
 
@@ -154,7 +154,7 @@ export const AuthPage: React.FC = () => {
     }
 
     if (!otp || otp.trim().length < 6) {
-      setErrorMessage('Please enter the complete 6-digit OTP code.');
+      setErrorMessage('Please enter the complete 8-character OTP code.');
       return;
     }
 
@@ -461,11 +461,11 @@ export const AuthPage: React.FC = () => {
               </form>
             )
           ) : (
-            /* STEP 2: Enter 6-Digit OTP (2-Minute Countdown) */
+            /* STEP 2: Enter 8-character OTP (2-Minute Countdown) */
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div className="text-center pb-1">
                 <p className="text-xs text-slate-600">
-                  Enter the 6-digit security code sent to <br />
+                  Enter the 8-character security code sent to <br />
                   <span className="font-bold text-slate-900">{email}</span>
                 </p>
                 {/* 2-Minute Countdown Badge */}
@@ -481,7 +481,7 @@ export const AuthPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 text-center">
-                  6-Digit Security Code (OTP)
+                  8-character Security Code (OTP)
                 </label>
                 <input
                   type="text"
