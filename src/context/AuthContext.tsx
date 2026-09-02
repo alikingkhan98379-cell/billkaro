@@ -181,17 +181,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isRateLimited) {
       return { error: `Too many attempts. Please wait ${rateLimitSecondsLeft}s.` };
     }
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanToken = token.trim();
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: token.trim(),
+      let { data, error } = await supabase.auth.verifyOtp({
+        email: cleanEmail,
+        token: cleanToken,
         type: 'email'
       });
+      if (error) {
+        // Retry with magiclink type in case Supabase issued token as magiclink
+        const retry = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: cleanToken,
+          type: 'magiclink'
+        });
+        if (!retry.error && retry.data?.user) {
+          data = retry.data;
+          error = null;
+        }
+      }
       if (error) {
         handleFailedAttempt();
         return { error: error.message };
       }
-      if (data.user) {
+      if (data?.user) {
         setUser(data.user);
         setSession(data.session);
         if (businessName && businessName.trim()) {
