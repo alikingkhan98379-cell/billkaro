@@ -124,3 +124,17 @@ export interface AuthActivityLog {
   user_agent?: string;
   created_at: string;
 }
+
+export interface UserAuthStatus {
+  exists: boolean;
+  has_google?: boolean;
+  has_password?: boolean;
+  provider?: 'google' | 'email' | 'both';
+}
+
+export interface SignupOtpResponse {
+  error?: string;
+  errorCode?: 'GOOGLE_EXISTS' | 'EMAIL_EXISTS' | 'RATE_LIMITED' | 'GENERIC_ERROR';
+  message?: string;
+}
+

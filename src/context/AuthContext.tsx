@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { BusinessProfile, Subscription, AuthActivityLog } from '../types';
+import { BusinessProfile, Subscription, AuthActivityLog, UserAuthStatus, SignupOtpResponse } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -14,13 +14,14 @@ interface AuthContextType {
   
   // Auth Operations
   signInWithGoogle: () => Promise<{ error?: string }>;
-  sendSignupOtp: (email: string, fullName: string, businessName: string) => Promise<{ error?: string }>;
+  sendSignupOtp: (email: string, fullName: string, businessName: string) => Promise<SignupOtpResponse>;
+  checkUserAuthStatus: (email: string) => Promise<UserAuthStatus>;
   completeSignupWithOtp: (email: string, token: string, password: string, fullName: string, businessName: string) => Promise<{ error?: string }>;
   
   loginWithPassword: (email: string, password: string) => Promise<{ 
     error?: string; 
     requires2FA?: boolean; 
-    success?: boolean;
+    success?: boolean; 
     message?: string;
   }>;
   verify2FAAndLogin: (email: string, token: string) => Promise<{ error?: string; success?: boolean }>;
@@ -205,7 +206,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  // 1. Google 1-Click Sign-In
+  // 1. Check User Auth Status & Providers (Server-side RPC with fallback)
+  const checkUserAuthStatus = async (email: string): Promise<UserAuthStatus> => {
+    const cleanEmail = email.trim().toLowerCase();
+    try {
+      const { data, error } = await supabase.rpc('check_user_auth_status', {
+        lookup_email: cleanEmail
+      });
+
+      if (!error && data && typeof data === 'object') {
+        return data as UserAuthStatus;
+      }
+    } catch (e) {
+      // Fall through to fallback
+    }
+
+    try {
+      const { data: profile } = await supabase
+        .from('business_profile')
+        .select('id, email')
+        .ilike('email', cleanEmail)
+        .maybeSingle();
+
+      if (profile) {
+        return { exists: true, has_google: false, has_password: true, provider: 'email' };
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return { exists: false };
+  };
+
+  // 1. Google 1-Click Sign-In (Automatically links with existing email account)
   const signInWithGoogle = async (): Promise<{ error?: string }> => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -221,17 +254,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 2. Signup: Step 1 - Send 6-Digit Email OTP
-  const sendSignupOtp = async (email: string, fullName: string, businessName: string): Promise<{ error?: string }> => {
+  // 2. Signup: Step 1 - Send 6-Digit Email OTP (With Strict Server-Side Duplicate Check)
+  const sendSignupOtp = async (
+    email: string, 
+    fullName: string, 
+    businessName: string
+  ): Promise<SignupOtpResponse> => {
+    const cleanEmail = email.trim().toLowerCase();
+
     if (isRateLimited) {
-      return { error: `Account temporarily locked due to repeated failed attempts. Please wait ${Math.ceil(rateLimitSecondsLeft / 60)} minutes.` };
+      return { 
+        error: `Account temporarily locked due to repeated failed attempts. Please wait ${Math.ceil(rateLimitSecondsLeft / 60)} minutes.`,
+        errorCode: 'RATE_LIMITED'
+      };
     }
-    if (!checkOtpRateLimit(email)) {
-      return { error: 'Maximum OTP request limit reached (5 per hour). Please wait before requesting another OTP.' };
+    if (!checkOtpRateLimit(cleanEmail)) {
+      return { 
+        error: 'Maximum OTP request limit reached (5 per hour). Please wait before requesting another OTP.',
+        errorCode: 'RATE_LIMITED'
+      };
     }
+
     try {
+      // SERVER-SIDE DUPLICATE ACCOUNT CHECK
+      const authStatus = await checkUserAuthStatus(cleanEmail);
+
+      if (authStatus.exists) {
+        // Scenario 2: User already signed up with Google, now tries Email+Password signup
+        if (authStatus.has_google && !authStatus.has_password) {
+          await logActivity('SIGNUP_BLOCKED_GOOGLE_EXISTS', cleanEmail);
+          return {
+            error: "An account with this email already exists. Please sign in with Google, or use 'Forgot Password' to set a password for this account.",
+            errorCode: 'GOOGLE_EXISTS'
+          };
+        }
+
+        // Scenario 4: User already has an Email+Password account
+        await logActivity('SIGNUP_BLOCKED_EMAIL_EXISTS', cleanEmail);
+        return {
+          error: "An account with this email already exists. Try logging in instead.",
+          errorCode: 'EMAIL_EXISTS'
+        };
+      }
+
+      // No existing account: Send 6-Digit OTP for new signup
       const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         options: {
           shouldCreateUser: true,
           data: {
@@ -240,11 +308,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       });
-      if (error) return { error: error.message };
-      await logActivity('SIGNUP_OTP_SENT', email);
+
+      if (error) {
+        if (error.message.toLowerCase().includes('already') || error.message.toLowerCase().includes('registered')) {
+          await logActivity('SIGNUP_BLOCKED_EMAIL_EXISTS', cleanEmail);
+          return {
+            error: "An account with this email already exists. Try logging in instead.",
+            errorCode: 'EMAIL_EXISTS'
+          };
+        }
+        return { error: error.message, errorCode: 'GENERIC_ERROR' };
+      }
+
+      await logActivity('SIGNUP_OTP_SENT', cleanEmail);
       return {};
     } catch (err: any) {
-      return { error: err?.message || 'Failed to send signup OTP' };
+      return { error: err?.message || 'Failed to send signup OTP', errorCode: 'GENERIC_ERROR' };
     }
   };
 
@@ -644,6 +723,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         rateLimitSecondsLeft,
         signInWithGoogle,
         sendSignupOtp,
+        checkUserAuthStatus,
         completeSignupWithOtp,
         loginWithPassword,
         verify2FAAndLogin,

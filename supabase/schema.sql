@@ -302,3 +302,73 @@ ALTER TABLE public.auth_activity_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "aal_select" ON public.auth_activity_logs FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "aal_insert" ON public.auth_activity_logs FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "aal_insert_anon" ON public.auth_activity_logs FOR INSERT TO anon WITH CHECK (true);
+
+-- Ensure strict uniqueness on business profile email (if provided)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_profile_email ON public.business_profile (LOWER(email)) WHERE email != '' AND email IS NOT NULL;
+
+-- ==============================================================================
+-- 11. Check User Auth Status & Server-Side Duplicate Account Prevention
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION public.check_user_auth_status(lookup_email TEXT)
+RETURNS JSON AS $$
+DECLARE
+    found_user RECORD;
+    is_google BOOLEAN := false;
+    is_email_pass BOOLEAN := false;
+    user_providers JSONB;
+BEGIN
+    SELECT 
+        u.id, 
+        u.email, 
+        u.raw_app_meta_data, 
+        u.encrypted_password,
+        COALESCE(u.raw_app_meta_data->'providers', '[]'::jsonb) as providers
+    INTO found_user
+    FROM auth.users u
+    WHERE LOWER(u.email) = LOWER(TRIM(lookup_email))
+    LIMIT 1;
+
+    IF found_user.id IS NULL THEN
+        -- Secondary check in business_profile table
+        IF EXISTS (SELECT 1 FROM public.business_profile WHERE LOWER(email) = LOWER(TRIM(lookup_email))) THEN
+            RETURN json_build_object(
+                'exists', true,
+                'has_google', false,
+                'has_password', true,
+                'provider', 'email'
+            );
+        END IF;
+        RETURN json_build_object('exists', false);
+    END IF;
+
+    -- Check if user has Google provider identity
+    IF EXISTS (
+        SELECT 1 FROM auth.identities 
+        WHERE user_id = found_user.id AND provider = 'google'
+    ) OR (found_user.raw_app_meta_data->>'provider' = 'google') 
+      OR (found_user.providers @> '["google"]'::jsonb) THEN
+        is_google := true;
+    END IF;
+
+    -- Check if user has password / email provider
+    IF (found_user.encrypted_password IS NOT NULL AND length(found_user.encrypted_password) > 0)
+       OR (found_user.raw_app_meta_data->>'provider' = 'email')
+       OR (found_user.providers @> '["email"]'::jsonb) THEN
+        is_email_pass := true;
+    END IF;
+
+    RETURN json_build_object(
+        'exists', true,
+        'has_google', is_google,
+        'has_password', is_email_pass,
+        'provider', CASE 
+            WHEN is_google AND is_email_pass THEN 'both'
+            WHEN is_google THEN 'google'
+            ELSE 'email'
+        END
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.check_user_auth_status(TEXT) TO anon, authenticated;
+
