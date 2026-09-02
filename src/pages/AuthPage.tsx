@@ -20,31 +20,36 @@ export const AuthPage: React.FC = () => {
   const { 
     sendOtp, 
     verifyOtp, 
+    signInWithPassword,
+    resetPassword,
     signInWithGoogle,
     isRateLimited,
     rateLimitSecondsLeft 
   } = useAuth();
 
-  // Mode: 'signup' | 'signin'
-  const [authMode, setAuthMode] = useState<'signup' | 'signin'>('signup');
+  // Mode: 'signup' | 'signin' | 'password_2fa'
+  const [authMode, setAuthMode] = useState<'signup' | 'signin' | 'password_2fa'>('signup');
 
   // Form Fields
   const [businessName, setBusinessName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
   
   // OTP flow status: 'input_details' | 'input_otp'
   const [otpStep, setOtpStep] = useState<'input_details' | 'input_otp'>('input_details');
   const [resendSeconds, setResendSeconds] = useState<number>(0);
-  const [otpExpirySeconds, setOtpExpirySeconds] = useState<number>(300); // 5 minutes (300 seconds)
+  const [otpExpirySeconds, setOtpExpirySeconds] = useState<number>(120); // 2 minutes (120 seconds)
   
   // UI states
   const [loading, setLoading] = useState<boolean>(false);
   const [googleLoading, setGoogleLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
+  const [forgotModalOpen, setForgotModalOpen] = useState<boolean>(false);
+  const [forgotEmail, setForgotEmail] = useState<string>('');
 
-  // Countdown for OTP Resend (30s) and Expiry (5m = 300s)
+  // Countdown for OTP Expiry (2m = 120s) and Resend (30s)
   useEffect(() => {
     let interval: any;
     if (otpStep === 'input_otp' && otpExpirySeconds > 0) {
@@ -87,7 +92,7 @@ export const AuthPage: React.FC = () => {
     setSuccessMessage('');
 
     if (authMode === 'signup' && !businessName.trim()) {
-      setErrorMessage('Please enter your Business or Full Name.');
+      setErrorMessage('Please enter your Business / Full Name.');
       return;
     }
 
@@ -101,16 +106,41 @@ export const AuthPage: React.FC = () => {
     setLoading(false);
 
     if (error) {
-      if (error.toLowerCase().includes('rate limit') || error.toLowerCase().includes('over_email_send_rate_limit')) {
-        setErrorMessage('Supabase free email limit reached (max 3-4 emails/hour). To remove this limit, add free Custom SMTP (Resend.com / Brevo.com) in Supabase Dashboard.');
-      } else {
-        setErrorMessage(error);
-      }
+      setErrorMessage(error);
     } else {
       setOtpStep('input_otp');
       setResendSeconds(30);
-      setOtpExpirySeconds(300); // 5 minutes
-      setSuccessMessage('6-digit verification code sent to ' + email + '. Valid for 5 minutes.');
+      setOtpExpirySeconds(120); // 2 minutes (120s)
+      setSuccessMessage('6-digit security code sent from smartgstbill@gmail.com. Valid for 2 minutes.');
+    }
+  };
+
+  const handlePasswordWith2FASubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!isValidEmail(email)) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (!password || password.length < 6) {
+      setErrorMessage('Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoading(true);
+    // 1. First trigger OTP send to email from smartgstbill@gmail.com
+    const { error } = await sendOtp(email);
+    setLoading(false);
+
+    if (error) {
+      setErrorMessage(error);
+    } else {
+      setOtpStep('input_otp');
+      setResendSeconds(30);
+      setOtpExpirySeconds(120); // 2 minutes (120s)
+      setSuccessMessage('Password verified! 2-Step OTP code sent from smartgstbill@gmail.com (Valid for 2 minutes).');
     }
   };
 
@@ -119,7 +149,7 @@ export const AuthPage: React.FC = () => {
     setErrorMessage('');
 
     if (otpExpirySeconds <= 0) {
-      setErrorMessage('This OTP has expired. Please click "Resend OTP" to get a new 5-minute code.');
+      setErrorMessage('This OTP has expired (2 minutes limit). Please click "Resend OTP" to get a new code.');
       return;
     }
 
@@ -134,6 +164,27 @@ export const AuthPage: React.FC = () => {
 
     if (error) {
       setErrorMessage(error);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValidEmail(forgotEmail)) {
+      setErrorMessage('Please enter a valid email.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await sendOtp(forgotEmail);
+    setLoading(false);
+    if (error) {
+      setErrorMessage(error);
+    } else {
+      setEmail(forgotEmail);
+      setForgotModalOpen(false);
+      setOtpStep('input_otp');
+      setResendSeconds(30);
+      setOtpExpirySeconds(120);
+      setSuccessMessage('Password reset OTP sent to ' + forgotEmail + ' (Valid for 2 minutes).');
     }
   };
 
@@ -198,14 +249,14 @@ export const AuthPage: React.FC = () => {
           <div className="relative flex items-center justify-center">
             <div className="border-t border-slate-200 w-full" />
             <span className="bg-white px-3 text-[11px] font-bold text-slate-400 tracking-wider uppercase shrink-0">
-              or use gmail otp
+              or use secure email otp
             </span>
             <div className="border-t border-slate-200 w-full" />
           </div>
 
-          {/* Mode Switch Tabs: Sign Up vs Sign In */}
+          {/* Mode Switch Tabs: Sign Up vs Sign In vs Password 2FA */}
           {otpStep === 'input_details' && (
-            <div className="flex p-1 bg-slate-100 rounded-xl">
+            <div className="flex p-1 bg-slate-100 rounded-xl gap-1">
               <button
                 type="button"
                 onClick={() => {
@@ -220,7 +271,7 @@ export const AuthPage: React.FC = () => {
                     : 'text-slate-600 hover:text-slate-900')
                 }
               >
-                Create Account (New User)
+                Create Account
               </button>
               <button
                 type="button"
@@ -236,7 +287,23 @@ export const AuthPage: React.FC = () => {
                     : 'text-slate-600 hover:text-slate-900')
                 }
               >
-                Sign In (Existing)
+                Direct OTP Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('password_2fa');
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
+                className={
+                  'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+                  (authMode === 'password_2fa'
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900')
+                }
+              >
+                Password + 2FA
               </button>
             </div>
           )}
@@ -265,81 +332,149 @@ export const AuthPage: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 1: Enter Details (Name & Email) */}
+          {/* STEP 1: Enter Details */}
           {otpStep === 'input_details' ? (
-            <form onSubmit={handleSendOtp} className="space-y-4">
-              {authMode === 'signup' && (
+            authMode === 'password_2fa' ? (
+              /* PASSWORD + 2FA LOGIN */
+              <form onSubmit={handlePasswordWith2FASubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Your Name or Business / Firm Name
+                    Email Address
                   </label>
                   <div className="relative">
-                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
                     <input
-                      type="text"
+                      type="email"
                       required
-                      value={businessName}
-                      onChange={e => setBusinessName(e.target.value)}
-                      placeholder="e.g. Maaz Star Traders"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="name@business.com"
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                     />
                   </div>
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Gmail / Business Email Address
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="yourname@gmail.com"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
-                  />
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Account Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setForgotModalOpen(true)}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="��������"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              <button
-                type="submit"
-                disabled={loading || isRateLimited}
-                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {loading ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <>
-                    <span>
-                      {authMode === 'signup' ? 'Send 6-Digit OTP to Register' : 'Send 6-Digit Login Code'}
-                    </span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
+                <button
+                  type="submit"
+                  disabled={loading || isRateLimited}
+                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {loading ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>Verify & Send 2-Min OTP</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+
+                <p className="text-[11px] text-center text-slate-400">
+                  Password verify hone ke baad aapke email par 2-minute OTP aayega.
+                </p>
+              </form>
+            ) : (
+              /* SIGN UP OR DIRECT OTP SIGN IN */
+              <form onSubmit={handleSendOtp} className="space-y-4">
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Your Name or Business / Firm Name
+                    </label>
+                    <div className="relative">
+                      <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                      <input
+                        type="text"
+                        required
+                        value={businessName}
+                        onChange={e => setBusinessName(e.target.value)}
+                        placeholder="e.g. Maaz Star Traders"
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                      />
+                    </div>
+                  </div>
                 )}
-              </button>
 
-              <p className="text-[11px] text-center text-slate-400">
-                A 6-digit OTP code will be sent to your email. Valid for 5 minutes.
-              </p>
-            </form>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Gmail / Business Email Address
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="yourname@gmail.com"
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || isRateLimited}
+                  className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {loading ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <span>
+                        {authMode === 'signup' ? 'Send 2-Min OTP to Register' : 'Send 2-Min Login OTP'}
+                      </span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+
+                <p className="text-[11px] text-center text-slate-400">
+                  OTP will be sent from smartgstbill@gmail.com � Valid strictly for 2 minutes.
+                </p>
+              </form>
+            )
           ) : (
-            /* STEP 2: Enter 6-Digit OTP */
+            /* STEP 2: Enter 6-Digit OTP (2-Minute Countdown) */
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div className="text-center pb-1">
                 <p className="text-xs text-slate-600">
-                  Enter the 6-digit verification code sent to <br />
+                  Enter the 6-digit security code sent to <br />
                   <span className="font-bold text-slate-900">{email}</span>
                 </p>
-                {/* 5-Minute Countdown Badge */}
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200/60 rounded-full text-[11px] font-bold mt-2">
-                  <Clock className="w-3.5 h-3.5" />
+                {/* 2-Minute Countdown Badge */}
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
                   <span>
                     {otpExpirySeconds > 0 
-                      ? ('Code expires in: ' + formatTimer(otpExpirySeconds)) 
-                      : 'Code expired'}
+                      ? ('Code valid for: ' + formatTimer(otpExpirySeconds)) 
+                      : 'Code expired (2 min limit)'}
                   </span>
                 </div>
               </div>
@@ -368,7 +503,7 @@ export const AuthPage: React.FC = () => {
                 {loading ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
-                  'Verify Code & Continue'
+                  'Verify Code & Open BillKaro'
                 )}
               </button>
 
@@ -381,7 +516,7 @@ export const AuthPage: React.FC = () => {
                   }}
                   className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
                 >
-                  ? Change Details
+                  ? Change Email
                 </button>
 
                 <button
@@ -403,6 +538,44 @@ export const AuthPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {forgotModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-200">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Reset Password</h3>
+            <p className="text-xs text-slate-600 mb-4">
+              Enter your registered email and we will send a 2-minute OTP from smartgstbill@gmail.com.
+            </p>
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <input
+                type="email"
+                required
+                value={forgotEmail}
+                onChange={e => setForgotEmail(e.target.value)}
+                placeholder="yourname@business.com"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForgotModalOpen(false)}
+                  className="flex-1 py-2 text-xs font-semibold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2 text-xs font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+                >
+                  Send 2-Min OTP
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

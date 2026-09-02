@@ -57,7 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const handleFailedAttempt = () => {
     const next = failedAttempts + 1;
     setFailedAttempts(next);
-    if (next >= 4) {
+    if (next >= 5) {
       setRateLimitSecondsLeft(60);
     }
   };
@@ -119,7 +119,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // Check and clean URL hash if it contains auth errors
     if (typeof window !== 'undefined' && window.location.hash) {
       if (window.location.hash.includes('error=')) {
         console.warn('Auth error detected in URL hash. Resetting URL state.');
@@ -127,7 +126,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -308,7 +306,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateBusinessProfile = async (updates: Partial<BusinessProfile>): Promise<{ error?: string }> => {
     if (!user) return { error: 'Not authenticated' };
     try {
-      // Clean undefined fields and upsert explicitly on 'user_id'
       const payload: any = {
         user_id: user.id,
         ...updates,
