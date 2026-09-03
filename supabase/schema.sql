@@ -475,32 +475,130 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Payments RLS Policies
+-- Payments RLS Policies (Zero Trust: Strict Scoping)
+DROP POLICY IF EXISTS "payments_select" ON public.payments;
 CREATE POLICY "payments_select" ON public.payments 
 FOR SELECT TO authenticated 
 USING (auth.uid() = user_id OR public.is_current_user_admin());
 
+DROP POLICY IF EXISTS "payments_insert" ON public.payments;
 CREATE POLICY "payments_insert" ON public.payments 
 FOR INSERT TO authenticated 
 WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "payments_update_user" ON public.payments;
 CREATE POLICY "payments_update_user" ON public.payments 
 FOR UPDATE TO authenticated 
 USING (auth.uid() = user_id AND status IN ('CREATED', 'WAITING_FOR_PAYMENT'))
 WITH CHECK (auth.uid() = user_id AND status IN ('CREATED', 'WAITING_FOR_PAYMENT', 'SUBMITTED', 'PENDING_ADMIN'));
 
+DROP POLICY IF EXISTS "payments_admin_all" ON public.payments;
 CREATE POLICY "payments_admin_all" ON public.payments 
 FOR ALL TO authenticated 
 USING (public.is_current_user_admin());
 
--- Audit Logs RLS Policies
+-- Audit Logs RLS Policies (Users can only read own, modification is strictly forbidden)
+DROP POLICY IF EXISTS "audit_select" ON public.payment_audit_logs;
 CREATE POLICY "audit_select" ON public.payment_audit_logs 
 FOR SELECT TO authenticated 
 USING (auth.uid() = user_id OR public.is_current_user_admin());
 
+DROP POLICY IF EXISTS "audit_insert" ON public.payment_audit_logs;
 CREATE POLICY "audit_insert" ON public.payment_audit_logs 
 FOR INSERT TO authenticated 
 WITH CHECK (auth.uid() = user_id OR public.is_current_user_admin());
+
+-- Subscriptions RLS Hardening: Regular users cannot modify subscription status directly
+DROP POLICY IF EXISTS "sub_update" ON public.subscriptions;
+CREATE POLICY "sub_update_admin_only" ON public.subscriptions 
+FOR UPDATE TO authenticated 
+USING (public.is_current_user_admin())
+WITH CHECK (public.is_current_user_admin());
+
+-- 12.4.1 Database Integrity Triggers (Anti-Tampering & Immutable Pricing)
+
+-- Trigger 1: Enforce Authoritative Payment Pricing, Plan Immutability & Prevent Unauthorized Status Escalation
+CREATE OR REPLACE FUNCTION public.enforce_payment_integrity()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- 1. Enforce Authoritative Plan Pricing (Database-level Zero Trust)
+    IF NEW.plan_id = 'monthly' THEN
+        NEW.amount := 49.00;
+    ELSIF NEW.plan_id = 'six_months' THEN
+        NEW.amount := 250.00;
+    ELSIF NEW.plan_id = 'yearly' THEN
+        NEW.amount := 470.00;
+    ELSE
+        RAISE EXCEPTION 'Invalid plan selected: %', NEW.plan_id;
+    END IF;
+
+    -- 2. Hardcoded destination details
+    NEW.currency := 'INR';
+    NEW.upi_id := '9638938258@ybl';
+    NEW.payment_note := 'BillKaro';
+
+    -- 3. Non-admin users cannot manipulate critical fields directly
+    IF NOT public.is_current_user_admin() THEN
+        IF TG_OP = 'INSERT' THEN
+            NEW.status := 'WAITING_FOR_PAYMENT';
+            NEW.verification_status := 'UNVERIFIED';
+            NEW.approved_at := NULL;
+            NEW.rejected_at := NULL;
+        ELSIF TG_OP = 'UPDATE' THEN
+            -- Block unauthorized status escalation to APPROVED / REJECTED
+            IF NEW.status IN ('APPROVED', 'REJECTED') AND OLD.status NOT IN ('APPROVED', 'REJECTED') THEN
+                RAISE EXCEPTION 'Unauthorized status modification. Status can only be verified and approved by administrators.';
+            END IF;
+            -- Enforce immutability of amount, plan_id, order_id, and user_id
+            NEW.amount := OLD.amount;
+            NEW.plan_id := OLD.plan_id;
+            NEW.order_id := OLD.order_id;
+            NEW.user_id := OLD.user_id;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_enforce_payment_integrity ON public.payments;
+CREATE TRIGGER trg_enforce_payment_integrity
+    BEFORE INSERT OR UPDATE ON public.payments
+    FOR EACH ROW EXECUTE FUNCTION public.enforce_payment_integrity();
+
+-- Trigger 2: Prevent Direct Client Modification of Subscriptions
+CREATE OR REPLACE FUNCTION public.enforce_subscription_integrity()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF NOT public.is_current_user_admin() THEN
+            IF NEW.plan != OLD.plan OR NEW.is_active != OLD.is_active OR NEW.expiry_date != OLD.expiry_date THEN
+                RAISE EXCEPTION 'Unauthorized direct subscription modification.';
+            END IF;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_enforce_subscription_integrity ON public.subscriptions;
+CREATE TRIGGER trg_enforce_subscription_integrity
+    BEFORE UPDATE ON public.subscriptions
+    FOR EACH ROW EXECUTE FUNCTION public.enforce_subscription_integrity();
+
+-- Trigger 3: Immutability of Audit Logs (Cannot be altered or deleted)
+CREATE OR REPLACE FUNCTION public.protect_audit_logs()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'Payment audit logs are immutable and cannot be modified or deleted.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_audit_logs ON public.payment_audit_logs;
+CREATE TRIGGER trg_protect_audit_logs
+    BEFORE UPDATE OR DELETE ON public.payment_audit_logs
+    FOR EACH ROW EXECUTE FUNCTION public.protect_audit_logs();
+
 
 -- 12.5 Secure Payment RPCs
 
