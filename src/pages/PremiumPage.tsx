@@ -45,6 +45,7 @@ export const PremiumPage: React.FC = () => {
 
   // Form states
   const [utrNumber, setUtrNumber] = useState<string>('');
+  const [transactionReference, setTransactionReference] = useState<string>('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState<boolean>(false);
@@ -191,12 +192,14 @@ export const PremiumPage: React.FC = () => {
         }
       }
 
-      // Submit payment proof to backend
-      const result = await submitPaymentProof(orderToSubmit!.order_id, cleanUtr, uploadedFilePath);
+      // Submit payment proof to backend (UTR + Transaction Reference + Screenshot)
+      const cleanTxnRef = transactionReference.trim() ? transactionReference.trim().toUpperCase() : undefined;
+      const result = await submitPaymentProof(orderToSubmit!.order_id, cleanUtr, cleanTxnRef, uploadedFilePath);
       if (result.error) {
         setErrorMessage(result.error);
       } else {
-        setSuccessMessage('Payment submitted successfully! Your upgrade will be activated within 4 hours.');
+        const msg = result.data?.message || 'Payment submitted successfully! Your upgrade will be activated within 4 hours.';
+        setSuccessMessage(msg);
         try {
           confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
         } catch (e) {}
@@ -535,7 +538,24 @@ export const PremiumPage: React.FC = () => {
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none uppercase"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">
-                  Found in your UPI app receipt under UPI Ref ID / Transaction Reference.
+                  Found in your UPI app receipt under UPI Ref ID / UTR Number.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Transaction Reference / Banking ID (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={transactionReference}
+                  onChange={e => setTransactionReference(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
+                  placeholder="e.g. TXN102938475"
+                  maxLength={32}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none uppercase"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Secondary transaction identifier if provided separately by your bank.
                 </p>
               </div>
 

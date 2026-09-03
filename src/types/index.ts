@@ -105,7 +105,7 @@ export type PaymentStatus =
   | 'REJECTED' 
   | 'EXPIRED';
 
-export type VerificationStatus = 'UNVERIFIED' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED';
+export type VerificationStatus = 'UNVERIFIED' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED' | 'SUSPICIOUS';
 
 export interface PaymentRecord {
   id: string;

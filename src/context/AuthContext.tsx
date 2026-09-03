@@ -50,7 +50,7 @@ interface AuthContextType {
 
   // Payment & Subscription Operations
   createPaymentOrder: (planId: string) => Promise<{ data?: any; error?: string }>;
-  submitPaymentProof: (orderId: string, utr: string, screenshotPath?: string) => Promise<{ data?: any; error?: string }>;
+  submitPaymentProof: (orderId: string, utr: string, transactionReference?: string, screenshotPath?: string) => Promise<{ data?: any; error?: string }>;
   fetchUserPayments: () => Promise<PaymentRecord[]>;
   adminGetPayments: (search?: string, status?: string) => Promise<PaymentRecord[]>;
   adminApprovePayment: (paymentId: string, adminNote?: string) => Promise<{ success?: boolean; error?: string; message?: string }>;
@@ -773,14 +773,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 2. Submit Payment Proof (UTR + Screenshot)
+  // 2. Submit Payment Proof (UTR + Transaction Reference + Screenshot)
   const submitPaymentProof = async (
     orderId: string, 
     utr: string, 
+    transactionReference?: string,
     screenshotPath?: string
   ): Promise<{ data?: any; error?: string }> => {
     if (!user) return { error: 'Not authenticated' };
     const cleanUtr = utr.trim().toUpperCase();
+    const cleanTxnRef = transactionReference ? transactionReference.trim().toUpperCase() : undefined;
+
     if (cleanUtr.length < 6) {
       return { error: 'Please enter a valid 12-digit UPI / UTR Reference Number.' };
     }
@@ -789,6 +792,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: rpcData, error: rpcError } = await supabase.rpc('submit_payment_proof', {
         p_order_id: orderId,
         p_utr: cleanUtr,
+        p_transaction_reference: cleanTxnRef || null,
         p_screenshot_path: screenshotPath || null
       });
 
@@ -798,6 +802,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Direct fallback
+      // Check duplicate UTR
       const { data: existingUtr } = await supabase
         .from('payments')
         .select('id, order_id')
@@ -810,13 +815,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: 'This transaction reference has already been submitted.' };
       }
 
+      // Check duplicate Transaction Reference if provided
+      if (cleanTxnRef) {
+        const { data: existingTxnRef } = await supabase
+          .from('payments')
+          .select('id, order_id')
+          .ilike('transaction_reference', cleanTxnRef)
+          .neq('order_id', orderId)
+          .not('status', 'in', '("REJECTED","EXPIRED")')
+          .maybeSingle();
+
+        if (existingTxnRef) {
+          return { error: 'This transaction reference has already been submitted.' };
+        }
+      }
+
+      const isSuspicious = Boolean(cleanTxnRef && cleanUtr === cleanTxnRef);
+      const verificationStatus = isSuspicious ? 'SUSPICIOUS' : 'UNDER_REVIEW';
+
       const { data: updatedPayment, error: updateError } = await supabase
         .from('payments')
         .update({
           utr: cleanUtr,
+          transaction_reference: cleanTxnRef || null,
           screenshot_path: screenshotPath || null,
           status: 'PENDING_ADMIN',
-          verification_status: 'UNDER_REVIEW',
+          verification_status: verificationStatus,
           submitted_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -827,7 +851,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (updateError) return { error: updateError.message };
 
-      return { data: updatedPayment };
+      return { 
+        data: {
+          ...updatedPayment,
+          message: isSuspicious ? 'Your payment details require additional verification.' : undefined
+        } 
+      };
     } catch (err: any) {
       return { error: err?.message || 'Failed to submit payment proof' };
     }

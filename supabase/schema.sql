@@ -391,7 +391,7 @@ CREATE TABLE IF NOT EXISTS public.payments (
     transaction_reference TEXT,
     screenshot_path TEXT,
     status TEXT NOT NULL DEFAULT 'CREATED' CHECK (status IN ('CREATED', 'WAITING_FOR_PAYMENT', 'SUBMITTED', 'VERIFYING', 'PENDING_ADMIN', 'APPROVED', 'REJECTED', 'EXPIRED')),
-    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (verification_status IN ('UNVERIFIED', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED')),
+    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (verification_status IN ('UNVERIFIED', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED', 'SUSPICIOUS')),
     verification_message TEXT,
     admin_notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -407,6 +407,11 @@ CREATE TABLE IF NOT EXISTS public.payments (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_utr_unique 
 ON public.payments (LOWER(TRIM(utr))) 
 WHERE utr IS NOT NULL AND utr != '' AND status NOT IN ('REJECTED', 'EXPIRED');
+
+-- Partial Unique index: Prevent duplicate Transaction Reference reuse across non-rejected payments
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_txn_ref_unique 
+ON public.payments (LOWER(TRIM(transaction_reference))) 
+WHERE transaction_reference IS NOT NULL AND transaction_reference != '' AND status NOT IN ('REJECTED', 'EXPIRED');
 
 CREATE INDEX IF NOT EXISTS idx_payments_user_id ON public.payments(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON public.payments(status);
@@ -679,10 +684,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 2. Submit Payment Proof (UTR + Screenshot)
+-- 2. Submit Payment Proof (UTR + Transaction Reference + Screenshot)
 CREATE OR REPLACE FUNCTION public.submit_payment_proof(
     p_order_id TEXT, 
     p_utr TEXT, 
+    p_transaction_reference TEXT DEFAULT NULL,
     p_screenshot_path TEXT DEFAULT NULL
 )
 RETURNS JSONB AS $$
@@ -690,17 +696,26 @@ DECLARE
     v_user_id UUID := auth.uid();
     v_payment RECORD;
     v_clean_utr TEXT;
+    v_clean_txn_ref TEXT;
+    v_verification_status TEXT := 'UNDER_REVIEW';
+    v_user_message TEXT := 'Your payment proof has been submitted successfully and is under review.';
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'Authentication required.';
     END IF;
 
-    v_clean_utr := upper(trim(COALESCE(p_utr, '')));
+    -- 1. Identifier Normalization
+    v_clean_utr := UPPER(TRIM(COALESCE(p_utr, '')));
+    v_clean_txn_ref := UPPER(TRIM(COALESCE(p_transaction_reference, '')));
+    IF v_clean_txn_ref = '' THEN 
+        v_clean_txn_ref := NULL; 
+    END IF;
+
     IF length(v_clean_utr) < 6 THEN
         RETURN jsonb_build_object('error', 'Please enter a valid 12-digit UPI / UTR Reference Number.');
     END IF;
 
-    -- Find payment order
+    -- 2. Find payment order
     SELECT * INTO v_payment 
     FROM public.payments 
     WHERE order_id = trim(p_order_id) AND user_id = v_user_id;
@@ -713,37 +728,92 @@ BEGIN
         RETURN jsonb_build_object('error', 'This payment order has already been approved and activated.');
     END IF;
 
-    -- Check if this UTR has already been submitted for another active payment
+    -- 3. Duplicate UTR Check (Cross-User & Cross-Order)
     IF EXISTS (
         SELECT 1 FROM public.payments 
         WHERE LOWER(TRIM(utr)) = LOWER(v_clean_utr) 
           AND id != v_payment.id 
           AND status NOT IN ('REJECTED', 'EXPIRED')
     ) THEN
+        INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+        VALUES (
+            v_payment.id, 
+            v_user_id, 
+            'DUPLICATE_UTR_ATTEMPT', 
+            v_user_id, 
+            jsonb_build_object('order_id', v_payment.order_id, 'utr', v_clean_utr)
+        );
         RETURN jsonb_build_object('error', 'This transaction reference has already been submitted.');
     END IF;
 
-    -- Transition to PENDING_ADMIN for independent admin verification
+    -- 4. Duplicate Transaction Reference Check (Cross-User & Cross-Order)
+    IF v_clean_txn_ref IS NOT NULL AND EXISTS (
+        SELECT 1 FROM public.payments 
+        WHERE LOWER(TRIM(transaction_reference)) = LOWER(v_clean_txn_ref) 
+          AND id != v_payment.id 
+          AND status NOT IN ('REJECTED', 'EXPIRED')
+    ) THEN
+        INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+        VALUES (
+            v_payment.id, 
+            v_user_id, 
+            'DUPLICATE_TRANSACTION_ATTEMPT', 
+            v_user_id, 
+            jsonb_build_object('order_id', v_payment.order_id, 'transaction_reference', v_clean_txn_ref)
+        );
+        RETURN jsonb_build_object('error', 'This transaction reference has already been submitted.');
+    END IF;
+
+    -- 5. Anti-Replay / UTR == Transaction Reference Suspicion Rule
+    IF v_clean_txn_ref IS NOT NULL AND v_clean_utr = v_clean_txn_ref THEN
+        v_verification_status := 'SUSPICIOUS';
+        v_user_message := 'Your payment details require additional verification.';
+
+        INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+        VALUES (
+            v_payment.id, 
+            v_user_id, 
+            'UTR_TRANSACTION_MATCH', 
+            v_user_id, 
+            jsonb_build_object(
+                'order_id', v_payment.order_id, 
+                'utr', v_clean_utr, 
+                'transaction_reference', v_clean_txn_ref,
+                'note', 'UTR and Transaction ID are identical'
+            )
+        );
+    ELSE
+        v_verification_status := 'UNDER_REVIEW';
+        v_user_message := 'Your payment proof has been submitted successfully and is under review.';
+    END IF;
+
+    -- 6. Atomic State Update (Transition strictly to PENDING_ADMIN)
     UPDATE public.payments SET
         utr = v_clean_utr,
+        transaction_reference = v_clean_txn_ref,
         screenshot_path = COALESCE(p_screenshot_path, v_payment.screenshot_path),
         status = 'PENDING_ADMIN',
-        verification_status = 'UNDER_REVIEW',
+        verification_status = v_verification_status,
         submitted_at = now(),
         updated_at = now()
     WHERE id = v_payment.id;
 
-    -- Audit log
+    -- 7. Audit Logging
     INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
     VALUES (
         v_payment.id, 
         v_user_id, 
         'PAYMENT_SUBMITTED', 
         v_user_id, 
-        jsonb_build_object('order_id', v_payment.order_id, 'utr', v_clean_utr)
+        jsonb_build_object(
+            'order_id', v_payment.order_id, 
+            'utr', v_clean_utr, 
+            'transaction_reference', v_clean_txn_ref,
+            'verification_status', v_verification_status
+        )
     );
 
-    -- In-app notification
+    -- 8. In-App User Notification
     INSERT INTO public.notifications (user_id, title, message, type, is_read)
     VALUES (
         v_user_id,
@@ -757,7 +827,8 @@ BEGIN
         'success', true,
         'order_id', v_payment.order_id,
         'status', 'PENDING_ADMIN',
-        'message', 'Your payment proof has been submitted successfully and is under review.'
+        'verification_status', v_verification_status,
+        'message', v_user_message
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -955,7 +1026,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. Admin Get All Payments (Search by UTR, Order ID, Email, Status)
+-- 5. Admin Get All Payments (Search by UTR, Transaction ID, Order ID, Email, Status)
 CREATE OR REPLACE FUNCTION public.admin_get_payments(
     p_search TEXT DEFAULT NULL,
     p_status TEXT DEFAULT NULL
@@ -971,6 +1042,7 @@ RETURNS TABLE (
     upi_id TEXT,
     payment_note TEXT,
     utr TEXT,
+    transaction_reference TEXT,
     screenshot_path TEXT,
     status TEXT,
     verification_status TEXT,
@@ -1000,6 +1072,7 @@ BEGIN
         p.upi_id,
         p.payment_note,
         p.utr,
+        p.transaction_reference,
         p.screenshot_path,
         p.status,
         p.verification_status,
@@ -1019,6 +1092,7 @@ BEGIN
         AND (
             p_search IS NULL OR p_search = '' 
             OR p.utr ILIKE '%' || p_search || '%'
+            OR p.transaction_reference ILIKE '%' || p_search || '%'
             OR p.order_id ILIKE '%' || p_search || '%'
             OR u.email ILIKE '%' || p_search || '%'
             OR bp.name ILIKE '%' || p_search || '%'
@@ -1028,7 +1102,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.create_payment_order(TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.submit_payment_proof(TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_payment_proof(TEXT, TEXT, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_approve_payment(UUID, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_reject_payment(UUID, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_payments(TEXT, TEXT) TO authenticated;
