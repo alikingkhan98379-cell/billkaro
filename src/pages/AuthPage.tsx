@@ -137,7 +137,7 @@ export const AuthPage: React.FC = () => {
       setScreen('login_2fa');
       setResendSeconds(30);
       setOtpExpirySeconds(300);
-      setInfoMessage(result.message || "For your security, since it's been over 5 days, we've sent a 6-digit verification code to your email.");
+      setInfoMessage(result.message || "For your security, since it's been over 5 days, we've sent an 8-character verification code to your email.");
     }
   };
 
@@ -151,7 +151,7 @@ export const AuthPage: React.FC = () => {
       return;
     }
     if (!otp || otp.trim().length < 6) {
-      setErrorMessage('Please enter the complete 6-digit OTP code.');
+      setErrorMessage('Please enter the complete 8-character OTP code.');
       return;
     }
 
@@ -210,7 +210,7 @@ export const AuthPage: React.FC = () => {
       setScreen('signup_otp');
       setResendSeconds(30);
       setOtpExpirySeconds(300);
-      setSuccessMessage(`6-digit verification code sent to ${email}. Valid for 5 minutes.`);
+      setSuccessMessage(`8-character verification code sent to ${email}. Valid for 5 minutes.`);
     }
   };
 
@@ -224,7 +224,7 @@ export const AuthPage: React.FC = () => {
       return;
     }
     if (!otp || otp.trim().length < 6) {
-      setErrorMessage('Please enter the complete 6-digit OTP code.');
+      setErrorMessage('Please enter the complete 8-character OTP code.');
       return;
     }
 
@@ -271,7 +271,7 @@ export const AuthPage: React.FC = () => {
       return;
     }
     if (!otp || otp.trim().length < 6) {
-      setErrorMessage('Please enter the 6-digit OTP code sent to your email.');
+      setErrorMessage('Please enter the complete 8-character OTP code sent to your email.');
       return;
     }
 
@@ -561,7 +561,7 @@ export const AuthPage: React.FC = () => {
                 </div>
                 <h3 className="text-base font-bold text-slate-900">2-Step Security Verification</h3>
                 <p className="text-xs text-slate-600 mt-1">
-                  Enter the 6-digit security code sent to <br />
+                  Enter the 8-character security code sent to <br />
                   <span className="font-bold text-slate-900">{email}</span>
                 </p>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
@@ -574,17 +574,17 @@ export const AuthPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 text-center">
-                  6-Digit Verification Code (OTP)
+                  8-Character Security Code (OTP)
                 </label>
                 <input
                   type="text"
-                  maxLength={8}
+                  maxLength={12}
                   required
                   autoFocus
                   value={otp}
                   onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
-                  placeholder="• • • • • •"
-                  className="w-full text-center tracking-[0.4em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
+                  placeholder="• • • • • • • •"
+                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
                 />
               </div>
 
@@ -744,7 +744,7 @@ export const AuthPage: React.FC = () => {
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
-                    <span>Send 6-Digit Verification Code</span>
+                    <span>Send 8-Character Verification Code</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -763,7 +763,7 @@ export const AuthPage: React.FC = () => {
                 </div>
                 <h3 className="text-base font-bold text-slate-900">Verify Your Email</h3>
                 <p className="text-xs text-slate-600 mt-1">
-                  Enter the 6-digit activation code sent to <br />
+                  Enter the 8-character activation code sent to <br />
                   <span className="font-bold text-slate-900">{email}</span>
                 </p>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
@@ -776,17 +776,17 @@ export const AuthPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 text-center">
-                  6-Digit Verification Code (OTP)
+                  8-Character Verification Code (OTP)
                 </label>
                 <input
                   type="text"
-                  maxLength={8}
+                  maxLength={12}
                   required
                   autoFocus
                   value={otp}
                   onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
-                  placeholder="• • • • • •"
-                  className="w-full text-center tracking-[0.4em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
+                  placeholder="• • • • • • • •"
+                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
                 />
               </div>
 
@@ -830,7 +830,7 @@ export const AuthPage: React.FC = () => {
               <div className="text-center pb-1">
                 <h3 className="text-base font-bold text-slate-900">Reset Account Password</h3>
                 <p className="text-xs text-slate-600 mt-1">
-                  Enter your registered email and we'll send a 6-digit OTP code to verify your identity.
+                  Enter your registered email and we'll send an 8-character OTP code to verify your identity.
                 </p>
               </div>
 
@@ -856,7 +856,7 @@ export const AuthPage: React.FC = () => {
                 disabled={loading || isRateLimited}
                 className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
               >
-                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Send 6-Digit Reset Code'}
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Send 8-Character Reset Code'}
               </button>
 
               <div className="text-center pt-1">
@@ -882,7 +882,7 @@ export const AuthPage: React.FC = () => {
               <div className="text-center pb-1">
                 <h3 className="text-base font-bold text-slate-900">Set New Password</h3>
                 <p className="text-xs text-slate-600 mt-1">
-                  Enter the 6-digit OTP sent to <br />
+                  Enter the 8-character OTP sent to <br />
                   <span className="font-bold text-slate-900">{email}</span>
                 </p>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
@@ -895,17 +895,17 @@ export const AuthPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1 text-center">
-                  6-Digit OTP Code
+                  8-Character OTP Code
                 </label>
                 <input
                   type="text"
-                  maxLength={8}
+                  maxLength={12}
                   required
                   autoFocus
                   value={otp}
                   onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
-                  placeholder="• • • • • •"
-                  className="w-full text-center tracking-[0.4em] text-2xl font-black py-2.5 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono uppercase"
+                  placeholder="• • • • • • • •"
+                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-2.5 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono uppercase"
                 />
               </div>
 

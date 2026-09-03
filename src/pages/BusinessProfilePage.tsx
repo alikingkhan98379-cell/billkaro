@@ -250,7 +250,7 @@ export const BusinessProfilePage: React.FC = () => {
     } else {
       setChangePassStep('otp_and_new_pass');
       setResendTimer(30);
-      setChangePassSuccess('6-digit security code sent to your registered email.');
+      setChangePassSuccess('8-character security code sent to your registered email.');
     }
   };
 
@@ -259,7 +259,7 @@ export const BusinessProfilePage: React.FC = () => {
     setChangePassError('');
 
     if (!changePassOtp || changePassOtp.trim().length < 6) {
-      setChangePassError('Please enter the 6-digit OTP code sent to your email.');
+      setChangePassError('Please enter the complete 8-character OTP code sent to your email.');
       return;
     }
 
@@ -681,7 +681,7 @@ export const BusinessProfilePage: React.FC = () => {
             {changePassStep === 'current_pass' ? (
               <form onSubmit={handleRequestPasswordChange} className="space-y-4">
                 <p className="text-xs text-slate-600">
-                  To protect your account, enter your current password first. We will send a 6-digit confirmation OTP to <strong>{user?.email}</strong>.
+                  To protect your account, enter your current password first. We will send an 8-character confirmation OTP to <strong>{user?.email}</strong>.
                 </p>
 
                 <div>
@@ -719,7 +719,7 @@ export const BusinessProfilePage: React.FC = () => {
                     disabled={changePassLoading}
                     className="flex-1 py-2.5 text-xs font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition cursor-pointer"
                   >
-                    {changePassLoading ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : 'Send 6-Digit OTP'}
+                    {changePassLoading ? <RefreshCw className="w-4 h-4 animate-spin mx-auto" /> : 'Send 8-Character OTP'}
                   </button>
                 </div>
               </form>
@@ -727,21 +727,21 @@ export const BusinessProfilePage: React.FC = () => {
               <form onSubmit={handleCompletePasswordChange} className="space-y-4">
                 <div className="text-center pb-1">
                   <p className="text-xs text-slate-600">
-                    Enter the 6-digit OTP code sent to <strong>{user?.email}</strong> and your new password.
+                    Enter the 8-character OTP code sent to <strong>{user?.email}</strong> and your new password.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 text-center">6-Digit Security OTP</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 text-center">8-Character Security OTP</label>
                   <input
                     type="text"
-                    maxLength={8}
+                    maxLength={12}
                     required
                     autoFocus
                     value={changePassOtp}
                     onChange={e => setChangePassOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
-                    placeholder="• • • • • •"
-                    className="w-full text-center tracking-[0.4em] text-2xl font-black py-2.5 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono uppercase"
+                    placeholder="• • • • • • • •"
+                    className="w-full text-center tracking-[0.3em] text-2xl font-black py-2.5 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono uppercase"
                   />
                 </div>
 

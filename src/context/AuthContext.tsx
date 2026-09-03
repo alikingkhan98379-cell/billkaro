@@ -438,7 +438,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
-        // Case 4: Inactive for 5+ Days -> Trigger 6-Digit Email OTP
+        // Case 4: Inactive for 5+ Days -> Trigger 8-Character Email OTP
         if (isInactiveOver5Days) {
           await supabase.auth.signInWithOtp({
             email: cleanEmail,
@@ -447,7 +447,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await logActivity('LOGIN_2FA_REQUIRED', cleanEmail, data.user.id);
           return {
             requires2FA: true,
-            message: "For your security, since it's been over 5 days since your last login, we've sent a 6-digit verification code to your email."
+            message: "For your security, since it's been over 5 days since your last login, we've sent an 8-character verification code to your email."
           };
         }
 
@@ -491,7 +491,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
       if (error) {
-        return { error: 'Invalid or expired 6-digit verification code. Please check your email.' };
+        return { error: 'Invalid or expired 8-character verification code. Please check your email.' };
       }
       if (data?.user) {
         await supabase.from('business_profile').update({
@@ -526,12 +526,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
       await logActivity('PASSWORD_RESET_OTP_SENT', clean);
       return { 
-        message: 'If this email is registered in BillKaro, a 6-digit security code has been sent. Please check your inbox.' 
+        message: 'If this email is registered in BillKaro, an 8-character security code has been sent. Please check your inbox.' 
       };
     } catch (e) {
       // Return same generic message for security
       return { 
-        message: 'If this email is registered in BillKaro, a 6-digit security code has been sent. Please check your inbox.' 
+        message: 'If this email is registered in BillKaro, an 8-character security code has been sent. Please check your inbox.' 
       };
     }
   };
