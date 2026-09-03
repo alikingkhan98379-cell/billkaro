@@ -372,3 +372,568 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.check_user_auth_status(TEXT) TO anon, authenticated;
 
+-- ==============================================================================
+-- 12. Secure UPI Premium Payment System (Phase 1 Production)
+-- ==============================================================================
+
+-- 12.1 Payments Table
+CREATE TABLE IF NOT EXISTS public.payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    order_id TEXT NOT NULL UNIQUE,
+    plan_id TEXT NOT NULL,
+    amount NUMERIC(10,2) NOT NULL CHECK (amount >= 0),
+    currency TEXT NOT NULL DEFAULT 'INR',
+    payment_method TEXT NOT NULL DEFAULT 'UPI',
+    upi_id TEXT NOT NULL DEFAULT '9638938258@ybl',
+    payment_note TEXT NOT NULL DEFAULT 'BillKaro',
+    utr TEXT,
+    transaction_reference TEXT,
+    screenshot_path TEXT,
+    status TEXT NOT NULL DEFAULT 'CREATED' CHECK (status IN ('CREATED', 'WAITING_FOR_PAYMENT', 'SUBMITTED', 'VERIFYING', 'PENDING_ADMIN', 'APPROVED', 'REJECTED', 'EXPIRED')),
+    verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (verification_status IN ('UNVERIFIED', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED')),
+    verification_message TEXT,
+    admin_notes TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    submitted_at TIMESTAMPTZ,
+    verified_at TIMESTAMPTZ,
+    approved_at TIMESTAMPTZ,
+    rejected_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ DEFAULT (now() + INTERVAL '1 hour')
+);
+
+-- Partial Unique index: Prevent duplicate UTR reuse across non-rejected payments
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_utr_unique 
+ON public.payments (LOWER(TRIM(utr))) 
+WHERE utr IS NOT NULL AND utr != '' AND status NOT IN ('REJECTED', 'EXPIRED');
+
+CREATE INDEX IF NOT EXISTS idx_payments_user_id ON public.payments(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON public.payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_order_id ON public.payments(order_id);
+
+-- 12.2 Payment Audit Logs Table
+CREATE TABLE IF NOT EXISTS public.payment_audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    payment_id UUID REFERENCES public.payments(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    performed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payment_audit_payment_id ON public.payment_audit_logs(payment_id, created_at DESC);
+
+-- 12.3 Enhanced Subscriptions Table columns (if missing)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subscriptions' AND column_name = 'plan_id') THEN
+        ALTER TABLE public.subscriptions ADD COLUMN plan_id TEXT DEFAULT 'free';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subscriptions' AND column_name = 'start_date') THEN
+        ALTER TABLE public.subscriptions ADD COLUMN start_date TIMESTAMPTZ DEFAULT now();
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subscriptions' AND column_name = 'expiry_date') THEN
+        ALTER TABLE public.subscriptions ADD COLUMN expiry_date TIMESTAMPTZ;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subscriptions' AND column_name = 'payment_id') THEN
+        ALTER TABLE public.subscriptions ADD COLUMN payment_id UUID REFERENCES public.payments(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subscriptions' AND column_name = 'status') THEN
+        ALTER TABLE public.subscriptions ADD COLUMN status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'EXPIRED', 'CANCELLED'));
+    END IF;
+END $$;
+
+-- 12.4 Enable RLS on Payments & Audit Logs
+ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payment_audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Helper to check if current user is Admin
+CREATE OR REPLACE FUNCTION public.is_current_user_admin()
+RETURNS BOOLEAN AS $$
+DECLARE
+    v_role TEXT;
+    v_email TEXT;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RETURN false;
+    END IF;
+
+    SELECT 
+        COALESCE(raw_app_meta_data->>'role', ''),
+        COALESCE(email, '')
+    INTO v_role, v_email
+    FROM auth.users
+    WHERE id = auth.uid();
+
+    IF v_role = 'admin' OR LOWER(v_email) IN ('smartgstbill@gmail.com', 'admin@billkaro.com') THEN
+        RETURN true;
+    END IF;
+
+    RETURN false;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Payments RLS Policies
+CREATE POLICY "payments_select" ON public.payments 
+FOR SELECT TO authenticated 
+USING (auth.uid() = user_id OR public.is_current_user_admin());
+
+CREATE POLICY "payments_insert" ON public.payments 
+FOR INSERT TO authenticated 
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "payments_update_user" ON public.payments 
+FOR UPDATE TO authenticated 
+USING (auth.uid() = user_id AND status IN ('CREATED', 'WAITING_FOR_PAYMENT'))
+WITH CHECK (auth.uid() = user_id AND status IN ('CREATED', 'WAITING_FOR_PAYMENT', 'SUBMITTED', 'PENDING_ADMIN'));
+
+CREATE POLICY "payments_admin_all" ON public.payments 
+FOR ALL TO authenticated 
+USING (public.is_current_user_admin());
+
+-- Audit Logs RLS Policies
+CREATE POLICY "audit_select" ON public.payment_audit_logs 
+FOR SELECT TO authenticated 
+USING (auth.uid() = user_id OR public.is_current_user_admin());
+
+CREATE POLICY "audit_insert" ON public.payment_audit_logs 
+FOR INSERT TO authenticated 
+WITH CHECK (auth.uid() = user_id OR public.is_current_user_admin());
+
+-- 12.5 Secure Payment RPCs
+
+-- 1. Create Payment Order (Authoritative Server-side Price & Duration)
+CREATE OR REPLACE FUNCTION public.create_payment_order(p_plan_id TEXT)
+RETURNS JSONB AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_amount NUMERIC(10,2);
+    v_order_id TEXT;
+    v_payment_id UUID;
+    v_expires_at TIMESTAMPTZ := now() + INTERVAL '1 hour';
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required to create a payment order.';
+    END IF;
+
+    -- Authoritative server-side plan-to-price mapping (NEVER trust frontend amount)
+    IF p_plan_id = 'monthly' THEN
+        v_amount := 49.00;
+    ELSIF p_plan_id = 'six_months' THEN
+        v_amount := 250.00;
+    ELSIF p_plan_id = 'yearly' THEN
+        v_amount := 470.00;
+    ELSE
+        RAISE EXCEPTION 'Invalid plan selected: %', p_plan_id;
+    END IF;
+
+    -- Generate cryptographically random unique order ID: BILLKARO-YYYYMMDD-XXXXXXXX
+    v_order_id := 'BILLKARO-' || to_char(now(), 'YYYYMMDD') || '-' || upper(substring(encode(gen_random_bytes(4), 'hex') from 1 for 8));
+
+    INSERT INTO public.payments (
+        user_id,
+        order_id,
+        plan_id,
+        amount,
+        currency,
+        payment_method,
+        upi_id,
+        payment_note,
+        status,
+        verification_status,
+        expires_at
+    ) VALUES (
+        v_user_id,
+        v_order_id,
+        p_plan_id,
+        v_amount,
+        'INR',
+        'UPI',
+        '9638938258@ybl',
+        'BillKaro',
+        'WAITING_FOR_PAYMENT',
+        'UNVERIFIED',
+        v_expires_at
+    ) RETURNING id INTO v_payment_id;
+
+    -- Log payment creation in audit
+    INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+    VALUES (
+        v_payment_id, 
+        v_user_id, 
+        'PAYMENT_CREATED', 
+        v_user_id, 
+        jsonb_build_object('order_id', v_order_id, 'plan_id', p_plan_id, 'amount', v_amount)
+    );
+
+    RETURN jsonb_build_object(
+        'payment_id', v_payment_id,
+        'order_id', v_order_id,
+        'plan_id', p_plan_id,
+        'amount', v_amount,
+        'currency', 'INR',
+        'upi_id', '9638938258@ybl',
+        'payment_note', 'BillKaro',
+        'expires_at', v_expires_at
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 2. Submit Payment Proof (UTR + Screenshot)
+CREATE OR REPLACE FUNCTION public.submit_payment_proof(
+    p_order_id TEXT, 
+    p_utr TEXT, 
+    p_screenshot_path TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_payment RECORD;
+    v_clean_utr TEXT;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required.';
+    END IF;
+
+    v_clean_utr := upper(trim(COALESCE(p_utr, '')));
+    IF length(v_clean_utr) < 6 THEN
+        RETURN jsonb_build_object('error', 'Please enter a valid 12-digit UPI / UTR Reference Number.');
+    END IF;
+
+    -- Find payment order
+    SELECT * INTO v_payment 
+    FROM public.payments 
+    WHERE order_id = trim(p_order_id) AND user_id = v_user_id;
+
+    IF v_payment.id IS NULL THEN
+        RETURN jsonb_build_object('error', 'Payment order not found.');
+    END IF;
+
+    IF v_payment.status = 'APPROVED' THEN
+        RETURN jsonb_build_object('error', 'This payment order has already been approved and activated.');
+    END IF;
+
+    -- Check if this UTR has already been submitted for another active payment
+    IF EXISTS (
+        SELECT 1 FROM public.payments 
+        WHERE LOWER(TRIM(utr)) = LOWER(v_clean_utr) 
+          AND id != v_payment.id 
+          AND status NOT IN ('REJECTED', 'EXPIRED')
+    ) THEN
+        RETURN jsonb_build_object('error', 'This transaction reference has already been submitted.');
+    END IF;
+
+    -- Transition to PENDING_ADMIN for independent admin verification
+    UPDATE public.payments SET
+        utr = v_clean_utr,
+        screenshot_path = COALESCE(p_screenshot_path, v_payment.screenshot_path),
+        status = 'PENDING_ADMIN',
+        verification_status = 'UNDER_REVIEW',
+        submitted_at = now(),
+        updated_at = now()
+    WHERE id = v_payment.id;
+
+    -- Audit log
+    INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+    VALUES (
+        v_payment.id, 
+        v_user_id, 
+        'PAYMENT_SUBMITTED', 
+        v_user_id, 
+        jsonb_build_object('order_id', v_payment.order_id, 'utr', v_clean_utr)
+    );
+
+    -- In-app notification
+    INSERT INTO public.notifications (user_id, title, message, type, is_read)
+    VALUES (
+        v_user_id,
+        'Payment Under Verification ⏳',
+        'We received your payment details for Order #' || v_payment.order_id || '. Verification takes a maximum of 4 hours.',
+        'payment',
+        false
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'order_id', v_payment.order_id,
+        'status', 'PENDING_ADMIN',
+        'message', 'Your payment proof has been submitted successfully and is under review.'
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. Admin Approve Payment (Idempotent, Atomic Activation & Subscription Extension)
+CREATE OR REPLACE FUNCTION public.admin_approve_payment(
+    p_payment_id UUID, 
+    p_admin_note TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_admin_id UUID := auth.uid();
+    v_payment RECORD;
+    v_existing_sub RECORD;
+    v_duration INT := 30;
+    v_new_expiry TIMESTAMPTZ;
+    v_start_date TIMESTAMPTZ := now();
+BEGIN
+    -- Security: Validate Admin Privileges
+    IF NOT public.is_current_user_admin() THEN
+        RAISE EXCEPTION 'Unauthorized. Only administrators can approve payments.';
+    END IF;
+
+    -- Lock payment record
+    SELECT * INTO v_payment 
+    FROM public.payments 
+    WHERE id = p_payment_id 
+    FOR UPDATE;
+
+    IF v_payment.id IS NULL THEN
+        RETURN jsonb_build_object('error', 'Payment record not found.');
+    END IF;
+
+    -- Idempotency Check
+    IF v_payment.status = 'APPROVED' THEN
+        RETURN jsonb_build_object('success', true, 'message', 'Payment is already approved.');
+    END IF;
+
+    -- Determine authoritative plan duration
+    IF v_payment.plan_id = 'monthly' THEN
+        v_duration := 30;
+    ELSIF v_payment.plan_id = 'six_months' THEN
+        v_duration := 180;
+    ELSIF v_payment.plan_id = 'yearly' THEN
+        v_duration := 365;
+    END IF;
+
+    -- Fetch user existing subscription to protect remaining paid time
+    SELECT * INTO v_existing_sub 
+    FROM public.subscriptions 
+    WHERE user_id = v_payment.user_id 
+    FOR UPDATE;
+
+    IF v_existing_sub.id IS NOT NULL AND v_existing_sub.is_active = true AND v_existing_sub.expiry_date IS NOT NULL AND v_existing_sub.expiry_date > now() THEN
+        -- Existing active subscription -> Extend from existing expiry date
+        v_start_date := COALESCE(v_existing_sub.start_date, now());
+        v_new_expiry := v_existing_sub.expiry_date + (v_duration || ' days')::INTERVAL;
+    ELSE
+        -- Brand new or expired subscription -> Start from right now
+        v_start_date := now();
+        v_new_expiry := now() + (v_duration || ' days')::INTERVAL;
+    END IF;
+
+    -- 1. Atomically Update Payment Status
+    UPDATE public.payments SET
+        status = 'APPROVED',
+        verification_status = 'VERIFIED',
+        approved_at = now(),
+        verified_at = now(),
+        admin_notes = COALESCE(p_admin_note, admin_notes),
+        updated_at = now()
+    WHERE id = p_payment_id;
+
+    -- 2. Atomically Upsert Active Subscription
+    INSERT INTO public.subscriptions (
+        user_id,
+        plan,
+        plan_id,
+        status,
+        is_active,
+        start_date,
+        expiry_date,
+        payment_id,
+        upgraded_at,
+        updated_at
+    ) VALUES (
+        v_payment.user_id,
+        'premium',
+        v_payment.plan_id,
+        'ACTIVE',
+        true,
+        v_start_date,
+        v_new_expiry,
+        p_payment_id,
+        now(),
+        now()
+    ) ON CONFLICT (user_id) DO UPDATE SET
+        plan = 'premium',
+        plan_id = EXCLUDED.plan_id,
+        status = 'ACTIVE',
+        is_active = true,
+        start_date = EXCLUDED.start_date,
+        expiry_date = EXCLUDED.expiry_date,
+        payment_id = EXCLUDED.payment_id,
+        upgraded_at = now(),
+        updated_at = now();
+
+    -- 3. Log Audit Trail
+    INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+    VALUES (
+        p_payment_id,
+        v_payment.user_id,
+        'PAYMENT_APPROVED',
+        v_admin_id,
+        jsonb_build_object(
+            'order_id', v_payment.order_id,
+            'plan_id', v_payment.plan_id,
+            'amount', v_payment.amount,
+            'expiry_date', v_new_expiry,
+            'admin_notes', p_admin_note
+        )
+    );
+
+    -- 4. In-App User Success Notification
+    INSERT INTO public.notifications (user_id, title, message, type, is_read)
+    VALUES (
+        v_payment.user_id,
+        'Payment Verified & Premium Activated! 🎉',
+        'Your payment for ' || upper(v_payment.plan_id) || ' plan has been verified. Premium is active until ' || to_char(v_new_expiry, 'DD Mon YYYY') || '. Ads are OFF.',
+        'payment',
+        false
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'message', 'Payment approved and premium subscription successfully activated.',
+        'expiry_date', v_new_expiry
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 4. Admin Reject Payment
+CREATE OR REPLACE FUNCTION public.admin_reject_payment(
+    p_payment_id UUID, 
+    p_reason TEXT, 
+    p_admin_note TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_admin_id UUID := auth.uid();
+    v_payment RECORD;
+BEGIN
+    IF NOT public.is_current_user_admin() THEN
+        RAISE EXCEPTION 'Unauthorized.';
+    END IF;
+
+    SELECT * INTO v_payment 
+    FROM public.payments 
+    WHERE id = p_payment_id;
+
+    IF v_payment.id IS NULL THEN
+        RETURN jsonb_build_object('error', 'Payment record not found.');
+    END IF;
+
+    UPDATE public.payments SET
+        status = 'REJECTED',
+        verification_status = 'REJECTED',
+        rejected_at = now(),
+        verification_message = COALESCE(p_reason, 'Payment could not be verified in the bank account.'),
+        admin_notes = COALESCE(p_admin_note, admin_notes),
+        updated_at = now()
+    WHERE id = p_payment_id;
+
+    -- Audit log
+    INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+    VALUES (
+        p_payment_id,
+        v_payment.user_id,
+        'PAYMENT_REJECTED',
+        v_admin_id,
+        jsonb_build_object('order_id', v_payment.order_id, 'reason', p_reason, 'admin_notes', p_admin_note)
+    );
+
+    -- In-app notification
+    INSERT INTO public.notifications (user_id, title, message, type, is_read)
+    VALUES (
+        v_payment.user_id,
+        'Payment Verification Notice',
+        'Payment for Order #' || v_payment.order_id || ' could not be verified. Reason: ' || COALESCE(p_reason, 'Transaction not found in bank account.'),
+        'payment',
+        false
+    );
+
+    RETURN jsonb_build_object('success', true, 'message', 'Payment rejected.');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5. Admin Get All Payments (Search by UTR, Order ID, Email, Status)
+CREATE OR REPLACE FUNCTION public.admin_get_payments(
+    p_search TEXT DEFAULT NULL,
+    p_status TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id UUID,
+    user_id UUID,
+    order_id TEXT,
+    plan_id TEXT,
+    amount NUMERIC,
+    currency TEXT,
+    payment_method TEXT,
+    upi_id TEXT,
+    payment_note TEXT,
+    utr TEXT,
+    screenshot_path TEXT,
+    status TEXT,
+    verification_status TEXT,
+    verification_message TEXT,
+    admin_notes TEXT,
+    created_at TIMESTAMPTZ,
+    submitted_at TIMESTAMPTZ,
+    approved_at TIMESTAMPTZ,
+    rejected_at TIMESTAMPTZ,
+    user_email TEXT,
+    user_name TEXT
+) AS $$
+BEGIN
+    IF NOT public.is_current_user_admin() THEN
+        RAISE EXCEPTION 'Unauthorized.';
+    END IF;
+
+    RETURN QUERY
+    SELECT 
+        p.id,
+        p.user_id,
+        p.order_id,
+        p.plan_id,
+        p.amount,
+        p.currency,
+        p.payment_method,
+        p.upi_id,
+        p.payment_note,
+        p.utr,
+        p.screenshot_path,
+        p.status,
+        p.verification_status,
+        p.verification_message,
+        p.admin_notes,
+        p.created_at,
+        p.submitted_at,
+        p.approved_at,
+        p.rejected_at,
+        COALESCE(u.email, bp.email, '') as user_email,
+        COALESCE(bp.name, bp.full_name, 'Business User') as user_name
+    FROM public.payments p
+    LEFT JOIN auth.users u ON u.id = p.user_id
+    LEFT JOIN public.business_profile bp ON bp.user_id = p.user_id
+    WHERE 
+        (p_status IS NULL OR p_status = 'ALL' OR p.status = p_status)
+        AND (
+            p_search IS NULL OR p_search = '' 
+            OR p.utr ILIKE '%' || p_search || '%'
+            OR p.order_id ILIKE '%' || p_search || '%'
+            OR u.email ILIKE '%' || p_search || '%'
+            OR bp.name ILIKE '%' || p_search || '%'
+        )
+    ORDER BY p.created_at DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.create_payment_order(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_payment_proof(TEXT, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_approve_payment(UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_reject_payment(UUID, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_payments(TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_current_user_admin() TO authenticated;
+
+

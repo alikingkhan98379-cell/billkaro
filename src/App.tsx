@@ -16,6 +16,7 @@ import { BusinessProfilePage } from './pages/BusinessProfilePage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { PremiumPage } from './pages/PremiumPage';
 import { PrivacyTermsPage } from './pages/PrivacyTermsPage';
+import { AdminPaymentsPage } from './pages/AdminPaymentsPage';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -65,6 +66,7 @@ const AppContent: React.FC = () => {
           {currentTab === 'notifications' && <NotificationsPage />}
           {currentTab === 'premium' && <PremiumPage />}
           {currentTab === 'privacy-terms' && <PrivacyTermsPage />}
+          {currentTab === 'admin-payments' && <AdminPaymentsPage />}
         </main>
       </div>
 

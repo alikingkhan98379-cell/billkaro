@@ -26,7 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen,
   setMobileOpen
 }) => {
-  const { subscription } = useAuth();
+  const { subscription, isPremium, isAdmin } = useAuth();
   const { unreadCount } = useNotifications();
 
   const navItems = [
@@ -37,7 +37,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'products', label: 'Products Master', icon: Package },
     { id: 'business-profile', label: 'Business Profile & UPI', icon: Building2 },
     { id: 'notifications', label: 'Notifications', icon: Bell, badge: unreadCount },
-    { id: 'premium', label: 'Premium Plan', icon: Sparkles, gold: true },
+    { id: 'premium', label: isPremium ? 'Pro Active (Ads OFF)' : 'Upgrade to Pro', icon: Sparkles, gold: true },
+    ...(isAdmin ? [{ id: 'admin-payments', label: 'Admin Payments', icon: ShieldCheck, admin: true }] : []),
     { id: 'privacy-terms', label: 'Privacy & Terms', icon: ShieldCheck }
   ];
 

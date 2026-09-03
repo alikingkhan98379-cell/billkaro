@@ -29,7 +29,7 @@ interface DashboardPageProps {
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) => {
-  const { user, businessProfile, subscription } = useAuth();
+  const { user, businessProfile, subscription, isPremium } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customersCount, setCustomersCount] = useState<number>(0);
   const [productsCount, setProductsCount] = useState<number>(0);
@@ -160,24 +160,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-slate-900">
-                Plan Status: {subscription?.plan === 'premium' ? 'Premium Unlimited' : 'Free Tier'}
+                Plan Status: {isPremium ? 'BillKaro Pro (Ads OFF)' : 'Free Starter'}
               </span>
-              <Badge status={subscription?.plan === 'premium' ? 'PREMIUM' : 'FREE'} size="sm" />
+              <Badge status={isPremium ? 'PREMIUM' : 'FREE'} size="sm" />
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              {subscription?.plan === 'premium'
-                ? 'Unlimited invoices, custom logo & signature enabled'
+              {isPremium
+                ? 'Unlimited invoices, custom logo, signature & zero ads enabled'
                 : `${monthlyInvoicesCount} of 5 free invoices used this month`}
             </p>
           </div>
         </div>
 
-        {subscription?.plan !== 'premium' && (
+        {!isPremium && (
           <button
             onClick={() => setCurrentTab('premium')}
-            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
+            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
           >
-            Upgrade to Pro (?499/yr)
+            Upgrade to Pro (From ₹49)
           </button>
         )}
       </div>

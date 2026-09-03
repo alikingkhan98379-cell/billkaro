@@ -1,13 +1,24 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { BusinessProfile, Subscription, AuthActivityLog, UserAuthStatus, SignupOtpResponse } from '../types';
+import { 
+  BusinessProfile, 
+  Subscription, 
+  AuthActivityLog, 
+  UserAuthStatus, 
+  SignupOtpResponse,
+  PaymentRecord
+} from '../types';
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   businessProfile: BusinessProfile | null;
   subscription: Subscription | null;
+  isPremium: boolean;
+  isAdmin: boolean;
+  planId: string;
+  daysRemaining: number | null;
   loading: boolean;
   isRateLimited: boolean;
   rateLimitSecondsLeft: number;
@@ -36,6 +47,14 @@ interface AuthContextType {
   updateBusinessProfile: (updates: Partial<BusinessProfile>) => Promise<{ error?: string }>;
   refreshProfile: () => Promise<void>;
   fetchRecentActivityLogs: () => Promise<AuthActivityLog[]>;
+
+  // Payment & Subscription Operations
+  createPaymentOrder: (planId: string) => Promise<{ data?: any; error?: string }>;
+  submitPaymentProof: (orderId: string, utr: string, screenshotPath?: string) => Promise<{ data?: any; error?: string }>;
+  fetchUserPayments: () => Promise<PaymentRecord[]>;
+  adminGetPayments: (search?: string, status?: string) => Promise<PaymentRecord[]>;
+  adminApprovePayment: (paymentId: string, adminNote?: string) => Promise<{ success?: boolean; error?: string; message?: string }>;
+  adminRejectPayment: (paymentId: string, reason: string, adminNote?: string) => Promise<{ success?: boolean; error?: string; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -676,6 +695,270 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const isSubscriptionActive = (): boolean => {
+    if (!subscription) return false;
+    if (subscription.plan === 'free') return false;
+    if (subscription.status && subscription.status !== 'ACTIVE') return false;
+    if (!subscription.is_active) return false;
+    if (subscription.expiry_date) {
+      return new Date(subscription.expiry_date).getTime() > Date.now();
+    }
+    return subscription.plan === 'premium' || subscription.plan === 'monthly' || subscription.plan === 'six_months' || subscription.plan === 'yearly';
+  };
+
+  const isPremium = isSubscriptionActive();
+  const planId = subscription?.plan_id || subscription?.plan || 'free';
+  const isAdmin = user?.email === 'smartgstbill@gmail.com' || user?.email === 'admin@billkaro.com' || (user?.app_metadata as any)?.role === 'admin';
+
+  const daysRemaining = (() => {
+    if (!isPremium || !subscription?.expiry_date) return null;
+    const diff = new Date(subscription.expiry_date).getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  })();
+
+  // 1. Create Payment Order (Server-Side Authoritative Plan & Price)
+  const createPaymentOrder = async (targetPlanId: string): Promise<{ data?: any; error?: string }> => {
+    if (!user) return { error: 'Not authenticated' };
+    try {
+      const { data, error } = await supabase.rpc('create_payment_order', {
+        p_plan_id: targetPlanId
+      });
+
+      if (!error && data) {
+        return { data };
+      }
+
+      // Fallback if RPC not cached
+      const officialPlans: Record<string, number> = { monthly: 49, six_months: 250, yearly: 470 };
+      const amount = officialPlans[targetPlanId];
+      if (!amount) return { error: 'Invalid plan selected' };
+
+      const orderId = `BILLKARO-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+      const { data: insertData, error: insertError } = await supabase
+        .from('payments')
+        .insert({
+          user_id: user.id,
+          order_id: orderId,
+          plan_id: targetPlanId,
+          amount,
+          currency: 'INR',
+          payment_method: 'UPI',
+          upi_id: '9638938258@ybl',
+          payment_note: 'BillKaro',
+          status: 'WAITING_FOR_PAYMENT',
+          verification_status: 'UNVERIFIED',
+          expires_at: expiresAt
+        })
+        .select()
+        .single();
+
+      if (insertError) return { error: insertError.message };
+
+      return {
+        data: {
+          payment_id: insertData.id,
+          order_id: insertData.order_id,
+          plan_id: insertData.plan_id,
+          amount: insertData.amount,
+          currency: 'INR',
+          upi_id: insertData.upi_id,
+          payment_note: insertData.payment_note,
+          expires_at: insertData.expires_at
+        }
+      };
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to create payment order' };
+    }
+  };
+
+  // 2. Submit Payment Proof (UTR + Screenshot)
+  const submitPaymentProof = async (
+    orderId: string, 
+    utr: string, 
+    screenshotPath?: string
+  ): Promise<{ data?: any; error?: string }> => {
+    if (!user) return { error: 'Not authenticated' };
+    const cleanUtr = utr.trim().toUpperCase();
+    if (cleanUtr.length < 6) {
+      return { error: 'Please enter a valid 12-digit UPI / UTR Reference Number.' };
+    }
+
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('submit_payment_proof', {
+        p_order_id: orderId,
+        p_utr: cleanUtr,
+        p_screenshot_path: screenshotPath || null
+      });
+
+      if (!rpcError && rpcData) {
+        if (rpcData.error) return { error: rpcData.error };
+        return { data: rpcData };
+      }
+
+      // Direct fallback
+      const { data: existingUtr } = await supabase
+        .from('payments')
+        .select('id, order_id')
+        .ilike('utr', cleanUtr)
+        .neq('order_id', orderId)
+        .not('status', 'in', '("REJECTED","EXPIRED")')
+        .maybeSingle();
+
+      if (existingUtr) {
+        return { error: 'This transaction reference has already been submitted.' };
+      }
+
+      const { data: updatedPayment, error: updateError } = await supabase
+        .from('payments')
+        .update({
+          utr: cleanUtr,
+          screenshot_path: screenshotPath || null,
+          status: 'PENDING_ADMIN',
+          verification_status: 'UNDER_REVIEW',
+          submitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('order_id', orderId)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (updateError) return { error: updateError.message };
+
+      return { data: updatedPayment };
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to submit payment proof' };
+    }
+  };
+
+  // 3. Fetch User's Payments
+  const fetchUserPayments = async (): Promise<PaymentRecord[]> => {
+    if (!user) return [];
+    try {
+      const { data } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      return (data as PaymentRecord[]) || [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  // 4. Admin Get All Payments
+  const adminGetPayments = async (search?: string, status?: string): Promise<PaymentRecord[]> => {
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_get_payments', {
+        p_search: search || null,
+        p_status: status || 'ALL'
+      });
+
+      if (!rpcErr && rpcData) {
+        return rpcData as PaymentRecord[];
+      }
+
+      // Fallback query
+      let query = supabase.from('payments').select('*').order('created_at', { ascending: false });
+      if (status && status !== 'ALL') {
+        query = query.eq('status', status);
+      }
+      if (search && search.trim()) {
+        query = query.or(`utr.ilike.%${search}%,order_id.ilike.%${search}%`);
+      }
+      const { data } = await query;
+      return (data as PaymentRecord[]) || [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  // 5. Admin Approve Payment
+  const adminApprovePayment = async (
+    paymentId: string, 
+    adminNote?: string
+  ): Promise<{ success?: boolean; error?: string; message?: string }> => {
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_approve_payment', {
+        p_payment_id: paymentId,
+        p_admin_note: adminNote || null
+      });
+
+      if (!rpcErr && rpcData) {
+        if (rpcData.error) return { error: rpcData.error };
+        await refreshProfile();
+        return { success: true, message: rpcData.message };
+      }
+
+      // Direct fallback
+      const { data: payment } = await supabase.from('payments').select('*').eq('id', paymentId).single();
+      if (!payment) return { error: 'Payment not found' };
+
+      const duration = payment.plan_id === 'yearly' ? 365 : payment.plan_id === 'six_months' ? 180 : 30;
+      const expiry = new Date(Date.now() + duration * 24 * 60 * 60 * 1000).toISOString();
+
+      await supabase.from('payments').update({
+        status: 'APPROVED',
+        verification_status: 'VERIFIED',
+        approved_at: new Date().toISOString(),
+        verified_at: new Date().toISOString(),
+        admin_notes: adminNote || null
+      }).eq('id', paymentId);
+
+      await supabase.from('subscriptions').upsert({
+        user_id: payment.user_id,
+        plan: 'premium',
+        plan_id: payment.plan_id,
+        status: 'ACTIVE',
+        is_active: true,
+        expiry_date: expiry,
+        payment_id: paymentId,
+        upgraded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+
+      await refreshProfile();
+      return { success: true, message: 'Payment approved and premium activated!' };
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to approve payment' };
+    }
+  };
+
+  // 6. Admin Reject Payment
+  const adminRejectPayment = async (
+    paymentId: string, 
+    reason: string, 
+    adminNote?: string
+  ): Promise<{ success?: boolean; error?: string; message?: string }> => {
+    try {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_reject_payment', {
+        p_payment_id: paymentId,
+        p_reason: reason,
+        p_admin_note: adminNote || null
+      });
+
+      if (!rpcErr && rpcData) {
+        if (rpcData.error) return { error: rpcData.error };
+        return { success: true, message: rpcData.message };
+      }
+
+      await supabase.from('payments').update({
+        status: 'REJECTED',
+        verification_status: 'REJECTED',
+        rejected_at: new Date().toISOString(),
+        verification_message: reason,
+        admin_notes: adminNote || null
+      }).eq('id', paymentId);
+
+      return { success: true, message: 'Payment rejected.' };
+    } catch (err: any) {
+      return { error: err?.message || 'Failed to reject payment' };
+    }
+  };
+
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -727,6 +1010,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session,
         businessProfile,
         subscription,
+        isPremium,
+        isAdmin,
+        planId,
+        daysRemaining,
         loading,
         isRateLimited,
         rateLimitSecondsLeft,
@@ -743,7 +1030,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut,
         updateBusinessProfile,
         refreshProfile,
-        fetchRecentActivityLogs
+        fetchRecentActivityLogs,
+        createPaymentOrder,
+        submitPaymentProof,
+        fetchUserPayments,
+        adminGetPayments,
+        adminApprovePayment,
+        adminRejectPayment
       }}
     >
       {children}
@@ -756,3 +1049,4 @@ export const useAuth = () => {
   if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
+

@@ -95,11 +95,68 @@ export interface Notification {
   created_at: string;
 }
 
+export type PaymentStatus = 
+  | 'CREATED' 
+  | 'WAITING_FOR_PAYMENT' 
+  | 'SUBMITTED' 
+  | 'VERIFYING' 
+  | 'PENDING_ADMIN' 
+  | 'APPROVED' 
+  | 'REJECTED' 
+  | 'EXPIRED';
+
+export type VerificationStatus = 'UNVERIFIED' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED';
+
+export interface PaymentRecord {
+  id: string;
+  user_id: string;
+  order_id: string;
+  plan_id: string;
+  amount: number;
+  currency: string;
+  payment_method: string;
+  upi_id: string;
+  payment_note: string;
+  utr?: string;
+  transaction_reference?: string;
+  screenshot_path?: string;
+  screenshot_url?: string; // Signed/accessible preview URL
+  status: PaymentStatus;
+  verification_status: VerificationStatus;
+  verification_message?: string;
+  admin_notes?: string;
+  created_at: string;
+  updated_at?: string;
+  submitted_at?: string;
+  verified_at?: string;
+  approved_at?: string;
+  rejected_at?: string;
+  expires_at?: string;
+  user_email?: string;
+  user_name?: string;
+}
+
+export interface PaymentAuditLog {
+  id: string;
+  payment_id: string;
+  user_id: string;
+  action: string;
+  performed_by?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+}
+
 export interface Subscription {
   id: string;
   user_id: string;
-  plan: SubscriptionPlan;
+  plan: string; // 'free' | 'monthly' | 'six_months' | 'yearly' | 'premium'
+  plan_id?: string;
+  plan_name?: string;
+  status?: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
   is_active: boolean;
+  start_date?: string;
+  expiry_date?: string;
+  payment_id?: string;
   upgraded_at?: string;
   created_at: string;
   updated_at?: string;
@@ -137,5 +194,6 @@ export interface SignupOtpResponse {
   errorCode?: 'ALREADY_EXISTS' | 'GOOGLE_EXISTS' | 'EMAIL_EXISTS' | 'RATE_LIMITED' | 'GENERIC_ERROR';
   message?: string;
 }
+
 
 

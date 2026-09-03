@@ -28,7 +28,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   mobileMenuOpen,
   setMobileMenuOpen
 }) => {
-  const { user, businessProfile, subscription, signOut } = useAuth();
+  const { user, businessProfile, subscription, isPremium, isAdmin, daysRemaining, signOut } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [showUserMenu, setShowUserMenu] = useState<boolean>(false);
@@ -51,7 +51,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2.5 text-left group"
             >
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-xl shadow-md group-hover:scale-105 transition-transform">
-                ?
+                ₹
               </div>
               <div>
                 <span className="text-xl font-black bg-gradient-to-r from-blue-600 to-slate-900 bg-clip-text text-transparent tracking-tight">
@@ -80,17 +80,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Subscription Pill */}
             <button
               onClick={() => setCurrentTab('premium')}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition hover:opacity-90"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition hover:opacity-90 cursor-pointer"
             >
-              {subscription?.plan === 'premium' ? (
+              {isPremium ? (
                 <div className="flex items-center gap-1 text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600" />
-                  Premium Active
+                  <span>Pro Active (Ads OFF)</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-1 text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 hover:border-blue-400">
-                  <span className="text-amber-600 font-bold">?</span>
-                  Upgrade to Pro (?499)
+                <div className="flex items-center gap-1 text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200 hover:border-blue-400">
+                  <span className="text-amber-600 font-bold">⚡</span>
+                  <span>Upgrade to Pro (From ₹49)</span>
                 </div>
               )}
             </button>
@@ -185,8 +185,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {businessProfile?.name || 'My Business'}
                     </p>
                     <p className="text-xs text-slate-500 truncate mt-0.5">{user?.email}</p>
-                    <div className="mt-2">
-                      <Badge status={subscription?.plan === 'premium' ? 'PREMIUM' : 'FREE'} size="sm" />
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge status={isPremium ? 'PREMIUM' : 'FREE'} size="sm" />
+                      {isAdmin && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-900 text-amber-400 border border-slate-700">
+                          Admin
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -196,7 +201,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         setCurrentTab('business-profile');
                         setShowUserMenu(false);
                       }}
-                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                     >
                       <User className="w-4 h-4 text-slate-400" />
                       Business Settings & UPI
@@ -206,17 +211,29 @@ export const Navbar: React.FC<NavbarProps> = ({
                         setCurrentTab('premium');
                         setShowUserMenu(false);
                       }}
-                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                     >
                       <Sparkles className="w-4 h-4 text-indigo-500" />
                       Subscription & Plan
                     </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          setCurrentTab('admin-payments');
+                          setShowUserMenu(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50 flex items-center gap-2 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-amber-600" />
+                        Admin Payment Desk
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setCurrentTab('privacy-terms');
                         setShowUserMenu(false);
                       }}
-                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                     >
                       <ShieldCheck className="w-4 h-4 text-emerald-500" />
                       Privacy & Terms
