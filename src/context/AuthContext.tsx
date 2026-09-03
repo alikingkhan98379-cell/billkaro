@@ -949,6 +949,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id' });
 
+      // In-app user notification
+      await supabase.from('notifications').insert({
+        user_id: payment.user_id,
+        title: 'Payment Verified & Premium Activated! 🎉',
+        message: `Your payment for ${payment.plan_id.toUpperCase()} plan has been verified. Premium is active until ${new Date(expiry).toLocaleDateString('en-IN')}. Ads are OFF.`,
+        type: 'payment',
+        is_read: false
+      });
+
       await refreshProfile();
       return { success: true, message: 'Payment approved and premium activated!' };
     } catch (err: any) {
@@ -974,6 +983,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true, message: rpcData.message };
       }
 
+      const { data: payment } = await supabase.from('payments').select('*').eq('id', paymentId).single();
+
       await supabase.from('payments').update({
         status: 'REJECTED',
         verification_status: 'REJECTED',
@@ -981,6 +992,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         verification_message: reason,
         admin_notes: adminNote || null
       }).eq('id', paymentId);
+
+      if (payment) {
+        await supabase.from('notifications').insert({
+          user_id: payment.user_id,
+          title: 'Payment Verification Notice',
+          message: `Payment for Order #${payment.order_id} could not be verified. Reason: ${reason || 'Transaction not found in bank account.'}`,
+          type: 'payment',
+          is_read: false
+        });
+      }
 
       return { success: true, message: 'Payment rejected.' };
     } catch (err: any) {
