@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Search, 
-  Filter, 
   CheckCircle2, 
   XCircle, 
   Clock, 
@@ -11,11 +10,7 @@ import {
   RefreshCw, 
   Copy, 
   Check, 
-  ExternalLink,
-  DollarSign,
-  UserCheck,
-  Building,
-  FileCheck,
+  FileCheck, 
   ShieldAlert
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -109,7 +104,7 @@ export const AdminPaymentsPage: React.FC = () => {
     if (result.error) {
       setActionMessage({ type: 'error', text: result.error });
     } else {
-      setActionMessage({ type: 'success', text: result.message || 'Payment marked as rejected.' });
+      setActionMessage({ type: 'success', text: result.message || 'Payment rejected.' });
       setShowRejectModal(false);
       setSelectedPayment(null);
       setAdminNote('');
@@ -117,148 +112,103 @@ export const AdminPaymentsPage: React.FC = () => {
     }
   };
 
-  const stats = {
-    total: payments.length,
-    pending: payments.filter(p => p.status === 'PENDING_ADMIN' || p.status === 'SUBMITTED').length,
-    approved: payments.filter(p => p.status === 'APPROVED').length,
-    rejected: payments.filter(p => p.status === 'REJECTED').length
-  };
-
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Header & Verification Desk Alert */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-amber-400 text-xs font-bold border border-slate-700 mb-2">
-            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-            <span>Admin Authorization Desk</span>
+    <div className="space-y-6 max-w-7xl mx-auto pb-10">
+      {/* Admin Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900 dark:bg-slate-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-800">
+        <div className="space-y-1">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
+            <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <span>Bank of Baroda Verification Desk</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            UPI Premium Payment Verifications
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Independently verify Bank of Baroda UPI receipts & approve premium plan activations.
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight">Admin Payment Authorizer</h2>
+          <p className="text-xs text-slate-400 max-w-2xl">
+            Cross-verify customer UTRs against your Bank of Baroda account statement. Approving instantly grants Pro subscription and ad-free billing.
           </p>
         </div>
 
-        <button
-          onClick={loadPayments}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl shadow-xs hover:bg-slate-50 transition cursor-pointer"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
-          <span>Refresh Records</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={loadPayments}
+            className="p-3 rounded-2xl bg-white/10 hover:bg-white/20 text-white transition flex items-center gap-2 text-xs font-bold cursor-pointer"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh Desk</span>
+          </button>
+        </div>
       </div>
 
-      {/* Action Notification */}
+      {/* Action Notification Alert */}
       {actionMessage && (
-        <div className={`p-4 rounded-2xl text-xs font-bold flex items-center justify-between shadow-xs ${
-          actionMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'
+        <div className={`p-4 rounded-2xl text-xs font-bold flex items-center justify-between animate-in fade-in ${
+          actionMessage.type === 'success' 
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800' 
+            : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-800'
         }`}>
           <div className="flex items-center gap-2">
             {actionMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
             <span>{actionMessage.text}</span>
           </div>
-          <button onClick={() => setActionMessage(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+          <button onClick={() => setActionMessage(null)} className="text-slate-400 hover:text-slate-600 p-1">✕</button>
         </div>
       )}
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-xs">
-          <span className="text-[11px] font-bold text-slate-400 uppercase">Total Loaded</span>
-          <div className="text-2xl font-black text-slate-900 mt-1">{stats.total}</div>
-        </div>
-        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 shadow-xs">
-          <span className="text-[11px] font-bold text-amber-700 uppercase flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" /> Pending Review
-          </span>
-          <div className="text-2xl font-black text-amber-900 mt-1">{stats.pending}</div>
-        </div>
-        <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 shadow-xs">
-          <span className="text-[11px] font-bold text-emerald-700 uppercase flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Approved
-          </span>
-          <div className="text-2xl font-black text-emerald-900 mt-1">{stats.approved}</div>
-        </div>
-        <div className="p-4 bg-rose-50 rounded-2xl border border-rose-200 shadow-xs">
-          <span className="text-[11px] font-bold text-rose-700 uppercase flex items-center gap-1">
-            <XCircle className="w-3.5 h-3.5" /> Rejected
-          </span>
-          <div className="text-2xl font-black text-rose-900 mt-1">{stats.rejected}</div>
-        </div>
-      </div>
+      {/* Search & Status Filter Controls */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-4 sm:p-6 space-y-4 transition-colors">
+        <form onSubmit={handleSearchSubmit} className="flex flex-col md:flex-row gap-3 items-center justify-between">
+          <div className="relative w-full md:w-96">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by Order ID, UTR, Txn ID, email..."
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
+            />
+          </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 items-center justify-between">
-        {/* Status Filter Tabs */}
-        <div className="flex flex-wrap gap-1.5 w-full md:w-auto">
-          {[
-            { id: 'PENDING_ADMIN', label: 'Pending Review', count: stats.pending },
-            { id: 'ALL', label: 'All Payments' },
-            { id: 'APPROVED', label: 'Approved' },
-            { id: 'REJECTED', label: 'Rejected' },
-            { id: 'WAITING_FOR_PAYMENT', label: 'Unpaid / Created' }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                statusFilter === tab.id
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {tab.label}
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-400 text-slate-900 font-black">
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Quick UTR / Order Search Form */}
-        <form onSubmit={handleSearchSubmit} className="relative w-full md:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search UTR, Order ID, or Email..."
-            className="w-full pl-9 pr-16 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none font-mono"
-          />
-          <button
-            type="submit"
-            className="absolute right-1.5 top-1 px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[10px] font-bold hover:bg-blue-700 cursor-pointer"
-          >
-            Search
-          </button>
+          <div className="flex flex-wrap gap-1.5 w-full md:w-auto">
+            {[
+              { id: 'PENDING_ADMIN', label: 'Pending Verification' },
+              { id: 'APPROVED', label: 'Approved' },
+              { id: 'REJECTED', label: 'Rejected' },
+              { id: 'ALL', label: 'All Records' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer min-h-[36px] ${
+                  statusFilter === tab.id
+                    ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </form>
-      </div>
 
-      {/* Payments Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        {/* Payments Table */}
         {loading ? (
-          <div className="p-12 text-center text-slate-500 text-xs">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-blue-600 mb-2" />
-            <span>Loading payment records...</span>
+          <div className="p-12 text-center text-slate-400">
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
+            <p className="text-xs">Loading transaction records...</p>
           </div>
         ) : payments.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-xs space-y-2">
-            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
               <FileCheck className="w-6 h-6" />
             </div>
-            <p className="font-bold text-slate-700">No payment records found</p>
+            <p className="font-bold text-slate-700 dark:text-slate-300">No payment records found</p>
             <p className="text-slate-400">Try adjusting your search query or status filter.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                <tr className="bg-slate-50 dark:bg-slate-800/50 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
                   <th className="p-3.5 pl-4">Order ID & Date</th>
                   <th className="p-3.5">User Details</th>
                   <th className="p-3.5">Plan & Amount</th>
@@ -268,56 +218,51 @@ export const AdminPaymentsPage: React.FC = () => {
                   <th className="p-3.5 text-right pr-4">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200">
                 {payments.map(p => {
                   const isPending = p.status === 'PENDING_ADMIN' || p.status === 'SUBMITTED';
                   const isApproved = p.status === 'APPROVED';
                   const isRejected = p.status === 'REJECTED';
 
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition">
-                      {/* Order & Date */}
+                    <tr key={p.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition">
                       <td className="p-3.5 pl-4">
-                        <div className="font-mono font-bold text-slate-900">{p.order_id}</div>
+                        <div className="font-mono font-bold text-slate-900 dark:text-white">{p.order_id}</div>
                         <div className="text-[10px] text-slate-400 mt-0.5">
                           {new Date(p.created_at).toLocaleDateString('en-IN', {
                             day: '2-digit',
                             month: 'short',
-                            year: 'numeric',
                             hour: '2-digit',
                             minute: '2-digit'
                           })}
                         </div>
                       </td>
 
-                      {/* User Info */}
                       <td className="p-3.5">
-                        <div className="font-bold text-slate-900">{p.user_name || 'Business Account'}</div>
-                        <div className="text-[11px] text-slate-500 font-mono truncate max-w-[180px]">{p.user_email || p.user_id}</div>
+                        <div className="font-bold text-slate-900 dark:text-white">{p.user_name || 'Business Account'}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate max-w-[180px]">{p.user_email || p.user_id}</div>
                       </td>
 
-                      {/* Plan & Amount */}
                       <td className="p-3.5">
-                        <div className="font-bold text-slate-900">₹{p.amount}</div>
-                        <div className="text-[10px] font-bold text-blue-600 uppercase mt-0.5">
+                        <div className="font-bold text-slate-900 dark:text-white">₹{p.amount}</div>
+                        <div className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase mt-0.5">
                           {p.plan_id.replace('_', ' ')}
                         </div>
                       </td>
 
-                      {/* UTR & Transaction Reference */}
                       <td className="p-3.5">
                         <div className="space-y-1">
                           {p.utr ? (
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] font-bold text-slate-400">UTR:</span>
-                              <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                              <span className="font-mono font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
                                 {p.utr}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleCopy(p.utr!)}
                                 title="Copy UTR"
-                                className="p-1 hover:bg-slate-200 rounded text-slate-500 cursor-pointer"
+                                className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 cursor-pointer"
                               >
                                 {copiedUtr === p.utr ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                               </button>
@@ -329,14 +274,14 @@ export const AdminPaymentsPage: React.FC = () => {
                           {p.transaction_reference && (
                             <div className="flex items-center gap-1.5">
                               <span className="text-[10px] font-bold text-slate-400">Txn:</span>
-                              <span className="font-mono font-bold text-slate-700 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
+                              <span className="font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
                                 {p.transaction_reference}
                               </span>
                             </div>
                           )}
 
                           {((p.utr && p.transaction_reference && p.utr.trim().toUpperCase() === p.transaction_reference.trim().toUpperCase()) || p.verification_status === 'SUSPICIOUS') && (
-                            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200 mt-1">
+                            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 mt-1">
                               <ShieldAlert className="w-3 h-3 text-rose-600" />
                               <span>SUSPICIOUS: Identical UTR & Txn ID</span>
                             </div>
@@ -344,86 +289,61 @@ export const AdminPaymentsPage: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Proof Screenshot */}
                       <td className="p-3.5">
                         {p.screenshot_path ? (
                           <button
                             type="button"
                             onClick={() => handleOpenPreview(p)}
-                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold bg-blue-50 px-2 py-1 rounded-lg border border-blue-200/60 cursor-pointer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 text-[11px] font-bold transition cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>View Proof</span>
                           </button>
                         ) : (
-                          <span className="text-slate-400 text-[11px]">No image</span>
+                          <span className="text-slate-400 text-[11px]">No Screenshot</span>
                         )}
                       </td>
 
-                      {/* Status */}
                       <td className="p-3.5">
-                        {isApproved && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            Approved
-                          </span>
-                        )}
-                        {isRejected && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
-                            <XCircle className="w-3 h-3 text-rose-600" />
-                            Rejected
-                          </span>
-                        )}
-                        {isPending && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 animate-pulse">
-                            <Clock className="w-3 h-3 text-amber-600" />
-                            Pending Review
-                          </span>
-                        )}
-                        {!isApproved && !isRejected && !isPending && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                            {p.status}
-                          </span>
-                        )}
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase inline-flex items-center gap-1 ${
+                          isApproved ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
+                          isRejected ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800' :
+                          'bg-amber-100 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                        }`}>
+                          {isPending && <Clock className="w-3 h-3 animate-spin text-amber-600" />}
+                          {isApproved && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                          {isRejected && <XCircle className="w-3 h-3 text-rose-600" />}
+                          <span>{p.status}</span>
+                        </span>
                       </td>
 
-                      {/* Action Buttons */}
                       <td className="p-3.5 text-right pr-4">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {isPending && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedPayment(p);
-                                  setShowApproveModal(true);
-                                }}
-                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-xs"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedPayment(p);
-                                  setShowRejectModal(true);
-                                }}
-                                className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-xs"
-                              >
-                                Reject
-                              </button>
-                            </>
-                          )}
-                          {!isPending && (
+                        {isPending ? (
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
-                              onClick={() => handleOpenPreview(p)}
-                              className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                              onClick={() => {
+                                setSelectedPayment(p);
+                                setShowApproveModal(true);
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer min-h-[36px]"
                             >
-                              <Eye className="w-4 h-4" />
+                              Approve
                             </button>
-                          )}
-                        </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedPayment(p);
+                                setShowRejectModal(true);
+                              }}
+                              className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition cursor-pointer min-h-[36px]"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 italic">Settled</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -434,200 +354,107 @@ export const AdminPaymentsPage: React.FC = () => {
         )}
       </div>
 
-      {/* MODAL 1: PROOF PREVIEW MODAL */}
-      {selectedPayment && previewProofUrl && !showApproveModal && !showRejectModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Payment Screenshot Proof</h3>
-                <p className="text-xs text-slate-500 font-mono">Order: {selectedPayment.order_id}</p>
-              </div>
-              <button onClick={() => setSelectedPayment(null)} className="text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+      {/* Proof Preview Modal */}
+      {selectedPayment && previewProofUrl && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">Payment Proof Screenshot</h4>
+              <button onClick={() => setPreviewProofUrl(null)} className="text-slate-400 hover:text-slate-600 p-1">✕</button>
             </div>
-
-            <div className="p-2 bg-slate-50 rounded-2xl border border-slate-200 text-center">
-              <img src={previewProofUrl} alt="Proof" className="max-h-80 mx-auto rounded-xl object-contain shadow-xs" />
+            <div className="max-h-[60vh] overflow-y-auto rounded-xl border border-slate-100 dark:border-slate-800">
+              <img src={previewProofUrl} alt="Proof" className="w-full h-auto rounded-xl" />
             </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
-              <div>
-                <span className="text-slate-400 text-[10px]">Claimed UTR:</span>
-                <p className="font-mono font-bold text-slate-900">{selectedPayment.utr || 'None'}</p>
-              </div>
-              <div>
-                <span className="text-slate-400 text-[10px]">Expected Amount:</span>
-                <p className="font-bold text-emerald-700">₹{selectedPayment.amount} ({selectedPayment.plan_id})</p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="text-right">
               <button
-                type="button"
-                onClick={() => setSelectedPayment(null)}
-                className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 cursor-pointer"
+                onClick={() => setPreviewProofUrl(null)}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold"
               >
-                Close
+                Close Preview
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: CONFIRM APPROVAL MODAL */}
+      {/* Approve Modal */}
       {showApproveModal && selectedPayment && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-4 border border-slate-200 animate-in fade-in zoom-in-95">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-1">
-              <CheckCircle2 className="w-6 h-6" />
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <span>Confirm Bank of Baroda Approval</span>
+            </h4>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Have you verified receipt of <strong className="text-slate-900 dark:text-white">₹{selectedPayment.amount}</strong> for Order <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{selectedPayment.order_id}</span>?
+            </p>
+            <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-xs space-y-1">
+              <div><strong className="text-slate-700 dark:text-slate-300">UTR:</strong> <span className="font-mono">{selectedPayment.utr || 'N/A'}</span></div>
+              <div><strong className="text-slate-700 dark:text-slate-300">Plan:</strong> <span className="uppercase">{selectedPayment.plan_id}</span></div>
             </div>
-
-            <div className="text-center space-y-1">
-              <h3 className="text-lg font-bold text-slate-900">Approve & Activate Premium</h3>
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Confirm that the payment has been independently verified in the <strong className="text-slate-900">Bank of Baroda</strong> account?
-              </p>
-            </div>
-
-            {/* Payment Summary Box */}
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500">User Email:</span>
-                <span className="font-bold text-slate-900 font-mono truncate max-w-[200px]">{selectedPayment.user_email || selectedPayment.user_id}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Plan:</span>
-                <span className="font-bold text-blue-600 uppercase">{selectedPayment.plan_id.replace('_', ' ')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Verified Amount:</span>
-                <span className="font-black text-slate-900">₹{selectedPayment.amount}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">UTR / Ref:</span>
-                <span className="font-mono font-bold text-emerald-700">{selectedPayment.utr}</span>
-              </div>
-              {selectedPayment.transaction_reference && (
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Txn Reference:</span>
-                  <span className="font-mono font-bold text-slate-700">{selectedPayment.transaction_reference}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Suspicious Match Callout */}
-            {((selectedPayment.utr && selectedPayment.transaction_reference && selectedPayment.utr.trim().toUpperCase() === selectedPayment.transaction_reference.trim().toUpperCase()) || selectedPayment.verification_status === 'SUSPICIOUS') && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-rose-800">
-                  <ShieldAlert className="w-4 h-4 text-rose-600" />
-                  <span>SUSPICIOUS: UTR and Transaction ID are identical</span>
-                </div>
-                <p className="text-[11px] text-rose-700 leading-relaxed font-medium">
-                  The user submitted identical values for UTR and Transaction Reference. Please verify with extra caution in your Bank of Baroda account statement before approving.
-                </p>
-              </div>
-            )}
-
-            {/* Optional Admin Note */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Internal Admin Note (Optional)</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Admin Notes (Optional)</label>
               <input
                 type="text"
                 value={adminNote}
                 onChange={e => setAdminNote(e.target.value)}
-                placeholder="e.g. Verified in Bank of Baroda App ref #..."
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                placeholder="e.g. Verified in BoB statement @ 03:30 PM"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100"
               />
             </div>
-
             <div className="flex gap-2 pt-2">
               <button
-                type="button"
-                onClick={() => {
-                  setShowApproveModal(false);
-                  setSelectedPayment(null);
-                }}
-                disabled={actionLoading}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                onClick={() => setShowApproveModal(false)}
+                className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={handleApproveConfirm}
                 disabled={actionLoading}
-                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                onClick={handleApproveConfirm}
+                className="flex-1 py-2.5 font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl disabled:opacity-50"
               >
-                {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                <span>Approve Payment</span>
+                {actionLoading ? 'Activating...' : 'Confirm & Activate Pro'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 3: REJECT PAYMENT MODAL */}
+      {/* Reject Modal */}
       {showRejectModal && selectedPayment && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-4 border border-slate-200 animate-in fade-in zoom-in-95">
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-1">
-              <XCircle className="w-6 h-6" />
-            </div>
-
-            <div className="text-center space-y-1">
-              <h3 className="text-lg font-bold text-slate-900">Reject Payment Proof</h3>
-              <p className="text-xs text-slate-500">
-                Select a valid reason for rejecting Order #{selectedPayment.order_id}.
-              </p>
-            </div>
-
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800">
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-rose-600" />
+              <span>Reject Payment Submission</span>
+            </h4>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Rejection Reason *</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Reason for Rejection</label>
               <select
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100"
               >
-                <option value="Payment not found in Bank of Baroda statement.">Payment not found in Bank of Baroda statement</option>
-                <option value="Incorrect payment amount received.">Incorrect payment amount received</option>
-                <option value="Duplicate or already claimed UTR reference.">Duplicate or already claimed UTR reference</option>
-                <option value="Payment screenshot is unclear or unreadable.">Payment screenshot is unclear or unreadable</option>
-                <option value="Invalid transaction reference format.">Invalid transaction reference format</option>
-                <option value="Suspicious transaction submission.">Suspicious transaction submission</option>
+                <option value="Payment not found in Bank of Baroda statement.">Transaction not found in bank statement</option>
+                <option value="Incorrect amount paid.">Incorrect amount transferred</option>
+                <option value="Invalid or fake UTR reference submitted.">Invalid or unverified UTR reference</option>
+                <option value="Duplicate transaction claim.">Duplicate transaction claim</option>
               </select>
             </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Internal Note (Optional)</label>
-              <input
-                type="text"
-                value={adminNote}
-                onChange={e => setAdminNote(e.target.value)}
-                placeholder="Reason details..."
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-              />
-            </div>
-
             <div className="flex gap-2 pt-2">
               <button
-                type="button"
-                onClick={() => {
-                  setShowRejectModal(false);
-                  setSelectedPayment(null);
-                }}
-                disabled={actionLoading}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                onClick={() => setShowRejectModal(false)}
+                className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={handleRejectConfirm}
                 disabled={actionLoading}
-                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                onClick={handleRejectConfirm}
+                className="flex-1 py-2.5 font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl disabled:opacity-50"
               >
-                {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                <span>Confirm Rejection</span>
+                {actionLoading ? 'Rejecting...' : 'Reject Payment'}
               </button>
             </div>
           </div>

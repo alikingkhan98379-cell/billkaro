@@ -26,6 +26,7 @@ import { calculateInvoiceTotals } from '../utils/taxCalculator';
 import { formatINR, numberToIndianWords } from '../utils/currency';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { openWhatsAppShare } from '../utils/whatsapp';
+import { shareInvoicePDF } from '../utils/shareService';
 import { Modal } from '../components/common/Modal';
 import { isValidIndianPhone, isValidGSTIN, isValidEmail } from '../utils/validators';
 import { verifyGSTINWithBackend } from '../utils/gstinService';
@@ -147,6 +148,20 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
 
     loadData();
   }, [user, subscription]);
+
+  // Unsaved changes protection
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const hasContent = items.some(it => it.product_name.trim() || it.price > 0) || (customerName.trim() && customerName !== 'Cash Customer');
+      if (hasContent && !saving) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [items, customerName, saving]);
 
   const handleSelectCustomerFromDropdown = (custId: string) => {
     setSelectedCustomerId(custId);
@@ -431,12 +446,12 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
         }
       }
 
-      // 2. WhatsApp Share
+      // 2. WhatsApp / Native PDF Share
       if (action === 'whatsapp' && businessProfile) {
         try {
-          openWhatsAppShare(fullInvoice, businessProfile, activeCustomerObject);
+          await shareInvoicePDF(fullInvoice, businessProfile, activeCustomerObject);
         } catch (waErr) {
-          console.error('WhatsApp share note:', waErr);
+          console.error('Invoice share note:', waErr);
         }
       }
 

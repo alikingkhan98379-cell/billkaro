@@ -79,6 +79,7 @@ export const CustomersPage: React.FC = () => {
     setAddress('');
     setErrorMessage('');
     setSuccessMessage('');
+    setNoticeMessage('');
     setModalOpen(true);
   };
 
@@ -92,6 +93,7 @@ export const CustomersPage: React.FC = () => {
     setAddress(c.address || '');
     setErrorMessage('');
     setSuccessMessage('');
+    setNoticeMessage('');
     setModalOpen(true);
   };
 
@@ -114,9 +116,9 @@ export const CustomersPage: React.FC = () => {
       if (result.data.state) setState(result.data.state);
 
       if (result.data.company_name) {
-        setSuccessMessage(`? GST Verified: ${result.data.company_name} auto-filled!`);
+        setSuccessMessage(`✓ GST Verified: ${result.data.company_name} auto-filled!`);
       } else {
-        setNoticeMessage(result.notice || `? State '${result.data.state}' auto-detected! (Company Name & Address require active API credits on gstincheck.co.in)`);
+        setNoticeMessage(result.notice || `✓ State '${result.data.state}' auto-detected! (Company Name & Address require active API credits on gstincheck.co.in)`);
       }
     } else {
       setErrorMessage(result.error || 'Could not fetch details, please enter manually.');
@@ -227,25 +229,27 @@ export const CustomersPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
             Customers Master Directory
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Manage your buyers, client GSTINs, contact numbers, and billing addresses
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Manage your buyers, client GSTINs, phone numbers, and billing addresses
           </p>
         </div>
         <button
           onClick={handleOpenAdd}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition self-start sm:self-auto"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition self-start sm:self-auto cursor-pointer min-h-[44px]"
         >
           <UserPlus className="w-4 h-4" />
-          Add New Customer
+          <span>Add New Customer</span>
         </button>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-4">
+      {/* Directory Search & List */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-4 sm:p-6 space-y-4 transition-colors">
         <div className="relative max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
@@ -253,7 +257,7 @@ export const CustomersPage: React.FC = () => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search customers by name, phone, GSTIN..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
           />
         </div>
 
@@ -263,27 +267,39 @@ export const CustomersPage: React.FC = () => {
             <p className="text-xs">Loading customer directory...</p>
           </div>
         ) : filteredCustomers.length === 0 ? (
-          <div className="p-12 text-center">
-            <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <h4 className="text-sm font-bold text-slate-700">No customers found</h4>
-            <p className="text-xs text-slate-500 mt-1">Add your first customer to quickly fill invoices</p>
+          <div className="p-12 text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400 mx-auto">
+              <Users className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No customers found</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                Add your customer details once and automatically autofill them when creating invoices.
+              </p>
+            </div>
+            <button
+              onClick={handleOpenAdd}
+              className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition cursor-pointer"
+            >
+              + Add Customer
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredCustomers.map(c => (
               <div
                 key={c.id}
-                className="p-5 rounded-2xl border border-slate-200/80 bg-white hover:border-blue-300 hover:shadow-xs transition space-y-3"
+                className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/50 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-xs transition space-y-3"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-sm">
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-sm">
                       {c.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900">{c.name}</h4>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white">{c.name}</h4>
                       {c.state && (
-                        <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                           {c.state}
                         </span>
                       )}
@@ -292,7 +308,7 @@ export const CustomersPage: React.FC = () => {
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleOpenEdit(c)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
@@ -301,14 +317,14 @@ export const CustomersPage: React.FC = () => {
                         setCustomerToDelete(c);
                         setDeleteModalOpen(true);
                       }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
-                <div className="space-y-1.5 text-xs text-slate-600">
+                <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                   {c.phone && (
                     <div className="flex items-center gap-2">
                       <Phone className="w-3.5 h-3.5 text-slate-400" />
@@ -324,11 +340,11 @@ export const CustomersPage: React.FC = () => {
                   {c.gstin && (
                     <div className="flex items-center gap-2 font-mono text-[11px]">
                       <Building className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="font-bold text-slate-800">GST: {c.gstin}</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">GST: {c.gstin}</span>
                     </div>
                   )}
                   {c.address && (
-                    <div className="flex items-start gap-2 text-slate-500 pt-1 text-[11px]">
+                    <div className="flex items-start gap-2 text-slate-500 dark:text-slate-400 pt-1 text-[11px]">
                       <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                       <span className="line-clamp-2">{c.address}</span>
                     </div>
@@ -348,60 +364,60 @@ export const CustomersPage: React.FC = () => {
       >
         <form onSubmit={handleSaveCustomer} className="space-y-4 text-xs">
           {errorMessage && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-center gap-2">
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {successMessage && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl flex items-center gap-2">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-xl flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{successMessage}</span>
             </div>
           )}
 
           {noticeMessage && (
-            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-xl flex items-start gap-2">
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-[11px] rounded-xl flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <span>{noticeMessage}</span>
             </div>
           )}
 
           <div>
-            <label className="block font-bold text-slate-700 mb-1">Customer / Business Name *</label>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Customer / Business Name *</label>
             <input
               type="text"
               required
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="e.g. Ramesh Trading Co."
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-600"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Phone Number (10 digits)</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Phone Number (10 digits)</label>
               <input
                 type="text"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
                 placeholder="9876543210"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               />
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-slate-700">GSTIN</label>
+                <label className="font-bold text-slate-700 dark:text-slate-300">GSTIN</label>
                 <button
                   type="button"
                   disabled={fetchingGst || !gstin}
                   onClick={handleFetchGstCustomer}
-                  className="text-[10px] font-bold text-blue-600 hover:text-blue-800 disabled:opacity-40 transition cursor-pointer flex items-center gap-1"
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 disabled:opacity-40 transition cursor-pointer flex items-center gap-1"
                 >
                   {fetchingGst ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
-                  <span>{fetchingGst ? 'Verifying...' : '? Fetch Details'}</span>
+                  <span>{fetchingGst ? 'Verifying...' : '⚡ Fetch Details'}</span>
                 </button>
               </div>
               <input
@@ -410,42 +426,42 @@ export const CustomersPage: React.FC = () => {
                 value={gstin}
                 onChange={e => setGstin(e.target.value.toUpperCase())}
                 placeholder="07AAAAA0000A1Z5"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Email Address</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
               <input
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="customer@email.com"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Place of Supply / State</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Place of Supply / State</label>
               <input
                 type="text"
                 value={state}
                 onChange={e => setState(e.target.value)}
                 placeholder="e.g. Uttar Pradesh"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               />
             </div>
           </div>
 
           <div>
-            <label className="block font-bold text-slate-700 mb-1">Billing Address</label>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Billing Address</label>
             <textarea
               rows={2}
               value={address}
               onChange={e => setAddress(e.target.value)}
               placeholder="Shop No 14, Main Commercial Complex..."
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-600"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
             />
           </div>
 
@@ -453,14 +469,14 @@ export const CustomersPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="flex-1 py-2 font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+              className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer min-h-[44px]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 py-2 font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50"
+              className="flex-1 py-2.5 font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 cursor-pointer min-h-[44px]"
             >
               {saving ? 'Saving...' : editingCustomer ? 'Update Customer' : 'Save Customer'}
             </button>
@@ -475,19 +491,19 @@ export const CustomersPage: React.FC = () => {
         title="Delete Customer"
       >
         <div className="space-y-4 text-xs">
-          <p className="text-slate-600">
-            Are you sure you want to delete <strong className="text-slate-900">{customerToDelete?.name}</strong> from your customer master? Past invoices will still preserve historical records.
+          <p className="text-slate-600 dark:text-slate-300">
+            Are you sure you want to delete <strong className="text-slate-900 dark:text-white">{customerToDelete?.name}</strong> from your customer master? Past invoices will still preserve historical records.
           </p>
           <div className="flex gap-2 pt-2">
             <button
               onClick={() => setDeleteModalOpen(false)}
-              className="flex-1 py-2 font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+              className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer min-h-[44px]"
             >
               Cancel
             </button>
             <button
               onClick={confirmDelete}
-              className="flex-1 py-2 font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-700"
+              className="flex-1 py-2.5 font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-700 cursor-pointer min-h-[44px]"
             >
               Delete Customer
             </button>

@@ -1,9 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { NotificationProvider } from './context/NotificationContext';
+import { NotificationProvider, useNotifications } from './context/NotificationContext';
+import { RouterProvider, useRouter } from './context/RouterContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/common/Sidebar';
+import { MobileBottomBar } from './components/common/MobileBottomBar';
+import { NetworkIndicator } from './components/common/NetworkIndicator';
 import { PWAInstallPrompt } from './components/common/PWAInstallPrompt';
 
 import { AuthPage } from './pages/AuthPage';
@@ -20,14 +24,23 @@ import { AdminPaymentsPage } from './pages/AdminPaymentsPage';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const { currentRoute, navigate, intendedRoute, setIntendedRoute } = useRouter();
+  const { unreadCount } = useNotifications();
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+
+  // Restore intended route after user logs in
+  useEffect(() => {
+    if (user && intendedRoute) {
+      navigate(intendedRoute, true);
+      setIntendedRoute(null);
+    }
+  }, [user, intendedRoute, navigate, setIntendedRoute]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white">
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-2xl mb-4 animate-bounce">
-          ?
+          ₹
         </div>
         <h2 className="text-xl font-black tracking-tight">BillKaro</h2>
         <p className="text-xs text-slate-400 mt-1 animate-pulse">Initializing Secure GST Suite...</p>
@@ -40,36 +53,39 @@ const AppContent: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors">
       <Navbar
-        currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
         mobileMenuOpen={mobileMenuOpen}
         setMobileMenuOpen={setMobileMenuOpen}
       />
 
-      <div className="flex-1 max-w-7xl w-full mx-auto flex">
+      <div className="flex-1 max-w-7xl w-full mx-auto flex pb-20 lg:pb-6">
         <Sidebar
-          currentTab={currentTab}
-          setCurrentTab={setCurrentTab}
           mobileOpen={mobileMenuOpen}
           setMobileOpen={setMobileMenuOpen}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0 overflow-y-auto">
-          {currentTab === 'dashboard' && <DashboardPage setCurrentTab={setCurrentTab} />}
-          {currentTab === 'create-invoice' && <InvoiceCreatePage setCurrentTab={setCurrentTab} />}
-          {currentTab === 'invoices' && <InvoiceHistoryPage setCurrentTab={setCurrentTab} />}
-          {currentTab === 'customers' && <CustomersPage />}
-          {currentTab === 'products' && <ProductsPage />}
-          {currentTab === 'business-profile' && <BusinessProfilePage />}
-          {currentTab === 'notifications' && <NotificationsPage />}
-          {currentTab === 'premium' && <PremiumPage />}
-          {currentTab === 'privacy-terms' && <PrivacyTermsPage />}
-          {currentTab === 'admin-payments' && <AdminPaymentsPage />}
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 min-w-0 overflow-y-auto">
+          {currentRoute === 'dashboard' && <DashboardPage setCurrentTab={navigate} />}
+          {currentRoute === 'create-invoice' && <InvoiceCreatePage setCurrentTab={navigate} />}
+          {currentRoute === 'invoices' && <InvoiceHistoryPage setCurrentTab={navigate} />}
+          {currentRoute === 'customers' && <CustomersPage />}
+          {currentRoute === 'products' && <ProductsPage />}
+          {currentRoute === 'business-profile' && <BusinessProfilePage />}
+          {currentRoute === 'notifications' && <NotificationsPage />}
+          {currentRoute === 'premium' && <PremiumPage />}
+          {currentRoute === 'privacy-terms' && <PrivacyTermsPage />}
+          {currentRoute === 'admin-payments' && <AdminPaymentsPage />}
         </main>
       </div>
 
+      {/* Mobile Bottom Navigation Bar */}
+      <MobileBottomBar
+        onOpenMore={() => setMobileMenuOpen(true)}
+        unreadNotifications={unreadCount}
+      />
+
+      <NetworkIndicator />
       <PWAInstallPrompt />
     </div>
   );
@@ -78,11 +94,15 @@ const AppContent: React.FC = () => {
 export function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <NotificationProvider>
-          <AppContent />
-        </NotificationProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <RouterProvider>
+              <AppContent />
+            </RouterProvider>
+          </NotificationProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

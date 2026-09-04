@@ -5,7 +5,6 @@ import {
   Plus, 
   Edit2, 
   Trash2, 
-  Tag, 
   RefreshCw, 
   AlertCircle 
 } from 'lucide-react';
@@ -105,7 +104,6 @@ export const ProductsPage: React.FC = () => {
     setSaving(true);
     try {
       if (editingProduct) {
-        // Update
         const { data, error } = await supabase
           .from('products')
           .update({
@@ -127,7 +125,6 @@ export const ProductsPage: React.FC = () => {
           setModalOpen(false);
         }
       } else {
-        // Insert
         const { data, error } = await supabase
           .from('products')
           .insert({
@@ -181,25 +178,27 @@ export const ProductsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
             Products & Items Master
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Store your inventory items, HSN codes, default rates, and GST tax slabs
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Store inventory items, HSN codes, default rates, and GST tax slabs
           </p>
         </div>
         <button
           onClick={handleOpenAdd}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition self-start sm:self-auto"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition self-start sm:self-auto cursor-pointer min-h-[44px]"
         >
           <Plus className="w-4 h-4" />
-          Add New Item
+          <span>Add New Item</span>
         </button>
       </div>
 
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-4 sm:p-6 space-y-4">
+      {/* Catalog Search & List */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-4 sm:p-6 space-y-4 transition-colors">
         <div className="relative max-w-md">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
@@ -207,7 +206,7 @@ export const ProductsPage: React.FC = () => {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search items by name or HSN code..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
           />
         </div>
 
@@ -217,41 +216,53 @@ export const ProductsPage: React.FC = () => {
             <p className="text-xs">Loading items master...</p>
           </div>
         ) : filteredProducts.length === 0 ? (
-          <div className="p-12 text-center">
-            <Package className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <h4 className="text-sm font-bold text-slate-700">No items found</h4>
-            <p className="text-xs text-slate-500 mt-1">Add items to quickly autocomplete rows when creating invoices</p>
+          <div className="p-12 text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400 mx-auto">
+              <Package className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No items found</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+                Add your items or services once to autocomplete prices, HSN, and GST on every invoice.
+              </p>
+            </div>
+            <button
+              onClick={handleOpenAdd}
+              className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition cursor-pointer"
+            >
+              + Add Item
+            </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50/75 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <tr className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   <th className="py-3 px-4">Item Name</th>
                   <th className="py-3 px-4">HSN / SAC</th>
                   <th className="py-3 px-4">Unit</th>
-                  <th className="py-3 px-4">Base Rate (?)</th>
+                  <th className="py-3 px-4">Base Rate</th>
                   <th className="py-3 px-4">GST Rate</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-200">
                 {filteredProducts.map(p => (
-                  <tr key={p.id} className="hover:bg-slate-50/50 transition">
-                    <td className="py-3.5 px-4 font-bold text-slate-900">
+                  <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
                       {p.name}
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-slate-600">
+                    <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400">
                       {p.hsn_code || '-'}
                     </td>
-                    <td className="py-3.5 px-4 font-medium text-slate-500">
+                    <td className="py-3.5 px-4 font-medium text-slate-500 dark:text-slate-400">
                       {p.unit}
                     </td>
-                    <td className="py-3.5 px-4 font-bold text-slate-900">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
                       {formatINR(p.price)}
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                         {p.gst_percent}% GST
                       </span>
                     </td>
@@ -259,7 +270,7 @@ export const ProductsPage: React.FC = () => {
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => handleOpenEdit(p)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -268,7 +279,7 @@ export const ProductsPage: React.FC = () => {
                             setProductToDelete(p);
                             setDeleteModalOpen(true);
                           }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -290,41 +301,41 @@ export const ProductsPage: React.FC = () => {
       >
         <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
           {errorMessage && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl flex items-center gap-2">
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           <div>
-            <label className="block font-bold text-slate-700 mb-1">Item / Product Name *</label>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Item / Product Name *</label>
             <input
               type="text"
               required
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="e.g. Graphic Design Services or Formal Cotton Shirt"
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-blue-600"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">HSN / SAC Code</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">HSN / SAC Code</label>
               <input
                 type="text"
                 value={hsnCode}
                 onChange={e => setHsnCode(e.target.value)}
                 placeholder="e.g. 998314 or 6109"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Unit of Measurement</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Unit of Measurement</label>
               <select
                 value={unit}
                 onChange={e => setUnit(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               >
                 <option value="PCS">PCS (Pieces)</option>
                 <option value="NOS">NOS (Numbers)</option>
@@ -344,7 +355,7 @@ export const ProductsPage: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Default Selling Price (?) *</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Default Selling Price (₹) *</label>
               <input
                 type="number"
                 min="0"
@@ -353,15 +364,15 @@ export const ProductsPage: React.FC = () => {
                 value={price}
                 onChange={e => setPrice(e.target.value)}
                 placeholder="0.00"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-700 mb-1">GST Tax Slab</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">GST Tax Slab</label>
               <select
                 value={gstPercent}
                 onChange={e => setGstPercent(Number(e.target.value))}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
               >
                 <option value="0">0% (Nil / Exempt)</option>
                 <option value="5">5% GST</option>
@@ -376,14 +387,14 @@ export const ProductsPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="flex-1 py-2 font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+              className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer min-h-[44px]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 py-2 font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50"
+              className="flex-1 py-2.5 font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 cursor-pointer min-h-[44px]"
             >
               {saving ? 'Saving...' : editingProduct ? 'Update Product' : 'Save Product'}
             </button>
@@ -398,19 +409,19 @@ export const ProductsPage: React.FC = () => {
         title="Delete Item"
       >
         <div className="space-y-4 text-xs">
-          <p className="text-slate-600">
-            Are you sure you want to delete item <strong className="text-slate-900">{productToDelete?.name}</strong>?
+          <p className="text-slate-600 dark:text-slate-300">
+            Are you sure you want to delete item <strong className="text-slate-900 dark:text-white">{productToDelete?.name}</strong>?
           </p>
           <div className="flex gap-2 pt-2">
             <button
               onClick={() => setDeleteModalOpen(false)}
-              className="flex-1 py-2 font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+              className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer min-h-[44px]"
             >
               Cancel
             </button>
             <button
               onClick={confirmDelete}
-              className="flex-1 py-2 font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-700"
+              className="flex-1 py-2.5 font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-700 cursor-pointer min-h-[44px]"
             >
               Delete Item
             </button>
