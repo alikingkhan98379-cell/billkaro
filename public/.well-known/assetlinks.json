@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "dev.workers.alikingkhan98379.billkarooo.twa",
+    "sha256_cert_fingerprints": ["D7:F2:6E:A4:EB:F8:AD:65:44:9A:0B:71:4F:E6:C0:7A:78:0F:2A:86:5F:8E:98:9B:03:E0:0E:99:F7:77:51:F5"]
+  }
+}]
