@@ -3,64 +3,44 @@ name: Build BillKaro Android APK
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build-apk:
-    name: Build Android APK
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🚀 Checkout Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ☕ Set up Java 17
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: 'zulu'
+          java-version: '21'
 
-      - name: 📱 Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: 🟢 Set up Node.js 20
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
-      - name: 📦 Install Node Dependencies
+      - name: Install Dependencies
         run: npm install
 
-      - name: 🛠️ Build Web Production Bundle
+      - name: Build Web App
         run: npm run build
 
-      - name: 🔄 Sync Capacitor Android Platform
+      - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: ⚙️ Grant execute permission for gradlew
-        run: chmod +x android/gradlew
-
-      - name: 🔨 Build Debug & Release APK
+      - name: Build Android APK
         run: |
           cd android
-          ./gradlew assembleDebug assembleRelease --no-daemon
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: 📋 Prepare APK Files for Download
-        run: |
-          mkdir -p build-output
-          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk build-output/BillKaro-Debug.apk
-          fi
-          if [ -f "android/app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk build-output/BillKaro-Release-Unsigned.apk
-          fi
-
-      - name: 📤 Upload BillKaro APK Artifacts
+      - name: Upload BillKaro APK
         uses: actions/upload-artifact@v4
         with:
           name: BillKaro-Android-APK
-          path: build-output/
-          retention-days: 30
+          path: android/app/build/outputs/apk/debug/app-debug.apk
