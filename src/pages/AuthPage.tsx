@@ -315,7 +315,7 @@ export const AuthPage: React.FC = () => {
 
       {/* Main Card */}
       <div className="mt-7 sm:mx-auto sm:w-full sm:max-w-md z-10 px-4">
-        <div className="bg-white py-8 px-6 sm:px-8 shadow-2xl rounded-3xl border border-slate-100 space-y-5">
+        <div className="bg-white dark:bg-slate-800 py-8 px-6 sm:px-8 shadow-2xl rounded-3xl border border-slate-100 dark:border-slate-700 space-y-5 transition-colors">
           
           {/* 1-CLICK GOOGLE SIGN IN BUTTON (Always available on main screens) */}
           {(screen === 'login' || screen === 'signup') && (
@@ -324,7 +324,7 @@ export const AuthPage: React.FC = () => {
                 type="button"
                 onClick={handleGoogleSignIn}
                 disabled={googleLoading || loading}
-                className="w-full py-3 px-4 bg-white hover:bg-slate-50 border-2 border-slate-200 hover:border-slate-300 text-slate-800 text-sm font-bold rounded-2xl transition shadow-xs flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 px-4 bg-white hover:bg-slate-50 dark:bg-slate-700 dark:hover:bg-slate-600 border-2 border-slate-200 hover:border-slate-300 dark:border-slate-600 dark:hover:border-slate-500 text-slate-800 dark:text-slate-100 text-sm font-bold rounded-2xl transition shadow-xs flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
               >
                 {googleLoading ? (
                   <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
@@ -355,15 +355,15 @@ export const AuthPage: React.FC = () => {
 
               {/* OR DIVIDER */}
               <div className="relative flex items-center justify-center">
-                <div className="border-t border-slate-200 w-full" />
-                <span className="bg-white px-3 text-[11px] font-bold text-slate-400 tracking-wider uppercase shrink-0">
+                <div className="border-t border-slate-200 dark:border-slate-700 w-full" />
+                <span className="bg-white dark:bg-slate-800 px-3 text-[11px] font-bold text-slate-400 dark:text-slate-400 tracking-wider uppercase shrink-0">
                   or with email & password
                 </span>
-                <div className="border-t border-slate-200 w-full" />
+                <div className="border-t border-slate-200 dark:border-slate-700 w-full" />
               </div>
 
               {/* Mode Switch Tabs: Sign In vs Sign Up */}
-              <div className="flex p-1 bg-slate-100 rounded-xl">
+              <div className="flex p-1 bg-slate-100 dark:bg-slate-900/60 rounded-xl">
                 <button
                   type="button"
                   onClick={() => {
@@ -371,10 +371,10 @@ export const AuthPage: React.FC = () => {
                     resetFormState();
                   }}
                   className={
-                    'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+                    'flex-1 py-2 text-xs font-bold rounded-lg transition cursor-pointer ' +
                     (screen === 'login'
-                      ? 'bg-white text-blue-700 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900')
+                      ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')
                   }
                 >
                   Sign In
@@ -386,10 +386,10 @@ export const AuthPage: React.FC = () => {
                     resetFormState();
                   }}
                   className={
-                    'flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+                    'flex-1 py-2 text-xs font-bold rounded-lg transition cursor-pointer ' +
                     (screen === 'signup'
-                      ? 'bg-white text-blue-700 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900')
+                      ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')
                   }
                 >
                   Create Account
@@ -400,20 +400,20 @@ export const AuthPage: React.FC = () => {
 
           {/* Rate Limit Alert */}
           {isRateLimited && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
               <span>Account temporarily locked due to repeated failed attempts. Cooldown active: {Math.ceil(rateLimitSecondsLeft / 60)}m ({rateLimitSecondsLeft}s)</span>
             </div>
           )}
 
           {/* Duplicate Account Alert: Exact friendly message and actions */}
           {duplicateAccountType && (
-            <div className="p-4 bg-amber-50 border border-amber-300 text-amber-950 text-xs rounded-2xl space-y-3 shadow-xs">
+            <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-200 text-xs rounded-2xl space-y-3 shadow-xs">
               <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold text-amber-900 text-xs">Email Already Registered</p>
-                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed font-medium">
+                  <p className="font-bold text-amber-900 dark:text-amber-200 text-xs">Email Already Registered</p>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5 leading-relaxed font-medium">
                     This email is already registered. Please log in instead.
                   </p>
                 </div>
@@ -438,9 +438,9 @@ export const AuthPage: React.FC = () => {
                     setErrorMessage('');
                     setScreen('forgot_email');
                   }}
-                  className="flex-1 py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 font-bold rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  className="flex-1 py-2.5 px-3 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 font-bold rounded-xl transition text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <KeyRound className="w-3.5 h-3.5 text-slate-600" />
+                  <KeyRound className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />
                   <span>Forgot Password</span>
                 </button>
               </div>
@@ -449,24 +449,24 @@ export const AuthPage: React.FC = () => {
 
           {/* Standard Error Message */}
           {errorMessage && !duplicateAccountType && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {/* Info / Notice Message */}
           {infoMessage && (
-            <div className="p-3.5 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl flex items-start gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 text-xs rounded-xl flex items-start gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
               <span>{infoMessage}</span>
             </div>
           )}
 
           {/* Success Message */}
           {successMessage && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs rounded-xl flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span>{successMessage}</span>
             </div>
           )}
@@ -477,7 +477,7 @@ export const AuthPage: React.FC = () => {
           {screen === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Email Address
                 </label>
                 <div className="relative">
@@ -488,14 +488,14 @@ export const AuthPage: React.FC = () => {
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder="name@business.com"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                   />
                 </div>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-slate-700">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                     Password
                   </label>
                   <button
@@ -504,7 +504,7 @@ export const AuthPage: React.FC = () => {
                       setScreen('forgot_email');
                       resetFormState();
                     }}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium cursor-pointer"
                   >
                     Forgot password?
                   </button>
@@ -517,12 +517,12 @@ export const AuthPage: React.FC = () => {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -544,7 +544,7 @@ export const AuthPage: React.FC = () => {
                 )}
               </button>
 
-              <p className="text-[11px] text-center text-slate-400">
+              <p className="text-[11px] text-center text-slate-400 dark:text-slate-400">
                 Active users log in instantly. Inactivity for 5+ days triggers a 6-digit 2FA email code.
               </p>
             </form>
@@ -556,16 +556,16 @@ export const AuthPage: React.FC = () => {
           {screen === 'login_2fa' && (
             <form onSubmit={handle2FAVerify} className="space-y-4">
               <div className="text-center pb-1">
-                <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 text-blue-600 mb-2">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 mb-2">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900">2-Step Security Verification</h3>
-                <p className="text-xs text-slate-600 mt-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">2-Step Security Verification</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                   Enter the 8-character security code sent to <br />
-                  <span className="font-bold text-slate-900">{email}</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{email}</span>
                 </p>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-full text-xs font-bold mt-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   <span>
                     {otpExpirySeconds > 0 ? `Code expires in: ${formatTimer(otpExpirySeconds)}` : 'Code expired'}
                   </span>
@@ -573,7 +573,7 @@ export const AuthPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-center">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 text-center">
                   8-Character Security Code (OTP)
                 </label>
                 <input
@@ -584,7 +584,7 @@ export const AuthPage: React.FC = () => {
                   value={otp}
                   onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
                   placeholder="• • • • • • • •"
-                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
+                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-3 bg-slate-50 dark:bg-slate-900 border-2 border-blue-600/30 dark:border-blue-500/40 rounded-xl text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
                 />
               </div>
 
@@ -603,7 +603,7 @@ export const AuthPage: React.FC = () => {
                     setScreen('login');
                     resetFormState();
                   }}
-                  className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                  className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium cursor-pointer"
                 >
                   ← Back to Login
                 </button>
@@ -618,7 +618,7 @@ export const AuthPage: React.FC = () => {
                     setResendSeconds(30);
                     setOtpExpirySeconds(300);
                   }}
-                  className="text-blue-600 hover:text-blue-800 font-bold disabled:text-slate-400 cursor-pointer"
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold disabled:text-slate-400 dark:disabled:text-slate-600 cursor-pointer"
                 >
                   {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend Code'}
                 </button>
@@ -632,7 +632,7 @@ export const AuthPage: React.FC = () => {
           {screen === 'signup' && (
             <form onSubmit={handleSignupSubmit} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Full Name *
                 </label>
                 <div className="relative">
@@ -643,13 +643,13 @@ export const AuthPage: React.FC = () => {
                     value={fullName}
                     onChange={e => setFullName(e.target.value)}
                     placeholder="Rahul Sharma"
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Business / Firm Name *
                 </label>
                 <div className="relative">
@@ -660,13 +660,13 @@ export const AuthPage: React.FC = () => {
                     value={businessName}
                     onChange={e => setBusinessName(e.target.value)}
                     placeholder="Sharma Enterprises"
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Business Email Address *
                 </label>
                 <div className="relative">
@@ -677,13 +677,13 @@ export const AuthPage: React.FC = () => {
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder="name@business.com"
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Create Account Password *
                 </label>
                 <div className="relative">
@@ -694,12 +694,12 @@ export const AuthPage: React.FC = () => {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -709,7 +709,7 @@ export const AuthPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Confirm Password *
                 </label>
                 <div className="relative">
@@ -720,18 +720,18 @@ export const AuthPage: React.FC = () => {
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {confirmPassword && password !== confirmPassword && (
-                  <p className="text-[11px] text-rose-600 font-bold mt-1">Passwords do not match</p>
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400 font-bold mt-1">Passwords do not match</p>
                 )}
               </div>
 
@@ -758,16 +758,16 @@ export const AuthPage: React.FC = () => {
           {screen === 'signup_otp' && (
             <form onSubmit={handleSignupOtpVerify} className="space-y-4">
               <div className="text-center pb-1">
-                <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 text-blue-600 mb-2">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 mb-2">
                   <Mail className="w-5 h-5" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900">Verify Your Email</h3>
-                <p className="text-xs text-slate-600 mt-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Verify Your Email</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                   Enter the 8-character activation code sent to <br />
-                  <span className="font-bold text-slate-900">{email}</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{email}</span>
                 </p>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-full text-xs font-bold mt-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   <span>
                     {otpExpirySeconds > 0 ? `Code expires in: ${formatTimer(otpExpirySeconds)}` : 'Code expired'}
                   </span>
@@ -775,7 +775,7 @@ export const AuthPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 text-center">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 text-center">
                   8-Character Verification Code (OTP)
                 </label>
                 <input
@@ -786,7 +786,7 @@ export const AuthPage: React.FC = () => {
                   value={otp}
                   onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
                   placeholder="• • • • • • • •"
-                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-3 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
+                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-3 bg-slate-50 dark:bg-slate-900 border-2 border-blue-600/30 dark:border-blue-500/40 rounded-xl text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition font-mono uppercase"
                 />
               </div>
 
@@ -805,7 +805,7 @@ export const AuthPage: React.FC = () => {
                     setScreen('signup');
                     resetFormState();
                   }}
-                  className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                  className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium cursor-pointer"
                 >
                   ← Change Details
                 </button>
@@ -814,7 +814,7 @@ export const AuthPage: React.FC = () => {
                   type="button"
                   disabled={resendSeconds > 0 || loading || isRateLimited}
                   onClick={() => handleSignupSubmit({ preventDefault: () => {} } as any)}
-                  className="text-blue-600 hover:text-blue-800 font-bold disabled:text-slate-400 cursor-pointer"
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold disabled:text-slate-400 dark:disabled:text-slate-600 cursor-pointer"
                 >
                   {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend Code'}
                 </button>
@@ -828,14 +828,14 @@ export const AuthPage: React.FC = () => {
           {screen === 'forgot_email' && (
             <form onSubmit={handleForgotEmailSubmit} className="space-y-4">
               <div className="text-center pb-1">
-                <h3 className="text-base font-bold text-slate-900">Reset Account Password</h3>
-                <p className="text-xs text-slate-600 mt-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Reset Account Password</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                   Enter your registered email and we'll send an 8-character OTP code to verify your identity.
                 </p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                   Registered Email Address
                 </label>
                 <div className="relative">
@@ -846,7 +846,7 @@ export const AuthPage: React.FC = () => {
                     value={email}
                     onChange={e => setEmail(e.target.value)}
                     placeholder="name@business.com"
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
                   />
                 </div>
               </div>
@@ -866,7 +866,7 @@ export const AuthPage: React.FC = () => {
                     setScreen('login');
                     resetFormState();
                   }}
-                  className="text-xs text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                  className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium cursor-pointer"
                 >
                   ← Back to Login
                 </button>
@@ -880,13 +880,13 @@ export const AuthPage: React.FC = () => {
           {screen === 'forgot_reset' && (
             <form onSubmit={handleForgotResetSubmit} className="space-y-4">
               <div className="text-center pb-1">
-                <h3 className="text-base font-bold text-slate-900">Set New Password</h3>
-                <p className="text-xs text-slate-600 mt-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Set New Password</h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                   Enter the 8-character OTP sent to <br />
-                  <span className="font-bold text-slate-900">{email}</span>
+                  <span className="font-bold text-slate-900 dark:text-white">{email}</span>
                 </p>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-xs font-bold mt-2">
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-full text-xs font-bold mt-2">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                   <span>
                     {otpExpirySeconds > 0 ? `Code expires in: ${formatTimer(otpExpirySeconds)}` : 'Code expired'}
                   </span>
@@ -894,7 +894,7 @@ export const AuthPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1 text-center">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1 text-center">
                   8-Character OTP Code
                 </label>
                 <input
@@ -905,12 +905,12 @@ export const AuthPage: React.FC = () => {
                   value={otp}
                   onChange={e => setOtp(e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase())}
                   placeholder="• • • • • • • •"
-                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-2.5 bg-slate-50 border-2 border-blue-600/30 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono uppercase"
+                  className="w-full text-center tracking-[0.3em] text-2xl font-black py-2.5 bg-slate-50 dark:bg-slate-900 border-2 border-blue-600/30 dark:border-blue-500/40 rounded-xl text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono uppercase"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   New Strong Password
                 </label>
                 <div className="relative">
@@ -921,12 +921,12 @@ export const AuthPage: React.FC = () => {
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -935,7 +935,7 @@ export const AuthPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Confirm New Password
                 </label>
                 <div className="relative">
@@ -946,18 +946,18 @@ export const AuthPage: React.FC = () => {
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className="w-full pl-10 pr-10 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                   >
                     {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {confirmPassword && password !== confirmPassword && (
-                  <p className="text-[11px] text-rose-600 font-bold mt-1">Passwords do not match</p>
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400 font-bold mt-1">Passwords do not match</p>
                 )}
               </div>
 
@@ -976,7 +976,7 @@ export const AuthPage: React.FC = () => {
                     setScreen('login');
                     resetFormState();
                   }}
-                  className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
+                  className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium cursor-pointer"
                 >
                   ← Back to Login
                 </button>
@@ -985,7 +985,7 @@ export const AuthPage: React.FC = () => {
                   type="button"
                   disabled={resendSeconds > 0 || loading || isRateLimited}
                   onClick={handleForgotEmailSubmit}
-                  className="text-blue-600 hover:text-blue-800 font-bold disabled:text-slate-400 cursor-pointer"
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold disabled:text-slate-400 dark:disabled:text-slate-600 cursor-pointer"
                 >
                   {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : 'Resend Code'}
                 </button>
@@ -994,8 +994,8 @@ export const AuthPage: React.FC = () => {
           )}
 
           {/* Security Guarantee Box */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-center gap-2 text-xs text-slate-500 font-medium">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>Bank-grade 256-bit SSL & Supabase RLS Isolated</span>
           </div>
         </div>
