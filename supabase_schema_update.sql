@@ -19,6 +19,17 @@ CREATE INDEX IF NOT EXISTS idx_products_company_id ON public.products(company_id
 ALTER TABLE IF EXISTS public.business_profile ADD COLUMN IF NOT EXISTS companies_data JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE IF EXISTS public.business_profile ADD COLUMN IF NOT EXISTS active_company_id TEXT;
 
+-- 1.1 Invoices Multi-Company Unique Constraint & Index
+DO $$
+BEGIN
+    ALTER TABLE public.invoices DROP CONSTRAINT IF EXISTS invoices_user_id_invoice_number_key;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_user_company_num 
+ON public.invoices (user_id, COALESCE(company_id, ''), LOWER(TRIM(invoice_number)));
+
 -- 2. Subscriptions Table Columns (Ensure all fields exist)
 DO $$
 BEGIN

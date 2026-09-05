@@ -40,6 +40,37 @@ interface InvoiceCreatePageProps {
   onInvoiceCreated?: () => void;
 }
 
+// Calculate the true next available invoice number by finding the highest numerical sequence
+export const generateNextInvoiceNumber = (invoices: { invoice_number?: string }[], prefix: string = 'INV-'): string => {
+  let maxNum = 0;
+  const existingSet = new Set<string>();
+
+  for (const inv of invoices) {
+    if (!inv.invoice_number) continue;
+    const clean = inv.invoice_number.trim().toUpperCase();
+    existingSet.add(clean);
+
+    // Extract trailing numerical suffix, e.g. "INV-0017" -> 17, "INV-17" -> 17, "17" -> 17
+    const match = clean.match(/(\d+)$/);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    }
+  }
+
+  let nextCandidate = maxNum + 1;
+  let candidateStr = `${prefix}${nextCandidate.toString().padStart(4, '0')}`;
+
+  while (existingSet.has(candidateStr.toUpperCase())) {
+    nextCandidate++;
+    candidateStr = `${prefix}${nextCandidate.toString().padStart(4, '0')}`;
+  }
+
+  return candidateStr;
+};
+
 export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
   setCurrentTab,
   onInvoiceCreated
@@ -134,7 +165,6 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           .order('created_at', { ascending: false });
 
         if (invList && invList.length > 0) {
-          const compInvs = invList.filter(inv => isItemForActiveCompany(inv));
           const currentMonth = new Date().getMonth();
           const currentYear = new Date().getFullYear();
           const thisMonthInvoices = invList.filter(inv => {
@@ -146,8 +176,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             setUpgradeModalOpen(true);
           }
 
-          const count = compInvs.length + 1;
-          const nextSeq = 'INV-' + count.toString().padStart(4, '0');
+          const nextSeq = generateNextInvoiceNumber(invList, 'INV-');
           setInvoiceNumber(nextSeq);
         } else {
           setInvoiceNumber('INV-0001');
@@ -538,6 +567,36 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             .insert(invPayload)
             .select()
             .single();
+          invData = retryRes.data;
+          invError = retryRes.error;
+        }
+
+        // Duplicate Invoice Number Auto-Resolver: If number collision occurs, automatically find next available number and save
+        const isDuplicateError = (err: any) => {
+          if (!err) return false;
+          const msg = (err.message || '').toLowerCase();
+          const code = err.code || '';
+          return code === '23505' || msg.includes('duplicate key') || msg.includes('unique constraint') || msg.includes('invoices_user_id_invoice_number_key');
+        };
+
+        if (invError && isDuplicateError(invError)) {
+          console.warn('Duplicate invoice number collision detected. Auto-resolving next available sequence...');
+          const { data: latestInvs } = await supabase
+            .from('invoices')
+            .select('invoice_number')
+            .eq('user_id', currentUserId);
+
+          const autoNextNum = generateNextInvoiceNumber(latestInvs || [], 'INV-');
+          invPayload.invoice_number = autoNextNum;
+          setInvoiceNumber(autoNextNum);
+          fullInvoice.invoice_number = autoNextNum;
+
+          const retryRes = await supabase
+            .from('invoices')
+            .insert(invPayload)
+            .select()
+            .single();
+          
           invData = retryRes.data;
           invError = retryRes.error;
         }
