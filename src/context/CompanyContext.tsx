@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { useAuth } from './AuthContext';
 import { Company, BusinessProfile } from '../types';
 import { PLANS_CONFIG, PlanId } from '../config/plans';
+import { isValidUUID, generateUUID } from '../utils/validators';
 
 interface CompanyContextType {
   companies: Company[];
@@ -59,10 +60,21 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
+      // Auto-migrate any non-UUID IDs to valid UUIDs to prevent PostgreSQL syntax errors
+      let needsSave = false;
+      list = list.map(c => {
+        if (!isValidUUID(c.id)) {
+          needsSave = true;
+          return { ...c, id: generateUUID() };
+        }
+        return c;
+      });
+
       // If no stored companies, seed from current businessProfile or create default
       if (list.length === 0) {
+        const defaultId = isValidUUID(businessProfile?.id) ? businessProfile!.id : generateUUID();
         const defaultCompany: Company = {
-          id: businessProfile?.id || 'comp-default',
+          id: defaultId,
           user_id: user.id,
           name: businessProfile?.name && businessProfile.name !== 'My Business' ? businessProfile.name : 'My Business',
           full_name: businessProfile?.full_name || '',
@@ -82,7 +94,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
           created_at: new Date().toISOString()
         };
         list = [defaultCompany];
-        localStorage.setItem(storageKey, JSON.stringify(list));
+        needsSave = true;
       } else if (businessProfile && businessProfile.name && businessProfile.name !== 'My Business') {
         // Sync active business profile updates back to list if matched
         const activeIdx = list.findIndex(c => c.id === businessProfile.id || c.name === businessProfile.name);
@@ -102,8 +114,12 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
             upi_id: businessProfile.upi_id,
             terms_conditions: businessProfile.terms_conditions
           };
-          localStorage.setItem(storageKey, JSON.stringify(list));
+          needsSave = true;
         }
+      }
+
+      if (needsSave) {
+        localStorage.setItem(storageKey, JSON.stringify(list));
       }
 
       setCompanies(list);
@@ -170,7 +186,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     const newCompany: Company = {
-      id: 'comp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+      id: generateUUID(),
       user_id: user.id,
       name: companyData.name.trim(),
       address: companyData.address || '',

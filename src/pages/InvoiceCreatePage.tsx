@@ -32,7 +32,7 @@ import { formatINR, numberToIndianWords } from '../utils/currency';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { shareInvoicePDF, downloadInvoicePDF } from '../utils/shareService';
 import { Modal } from '../components/common/Modal';
-import { isValidIndianPhone, isValidGSTIN, isValidEmail } from '../utils/validators';
+import { isValidIndianPhone, isValidGSTIN, isValidEmail, isValidUUID, isCompanyIdOrUuidError } from '../utils/validators';
 import { verifyGSTINWithBackend } from '../utils/gstinService';
 
 interface InvoiceCreatePageProps {
@@ -473,7 +473,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
               address: customerAddress.trim(),
               state: customerState.trim() || 'Delhi'
             };
-            if (currentCompanyId) {
+            if (currentCompanyId && isValidUUID(currentCompanyId)) {
               custPayload.company_id = currentCompanyId;
             }
 
@@ -483,8 +483,8 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
               .select()
               .single();
 
-            // Fallback retry if company_id column not present in schema
-            if (custInsertErr && (custInsertErr.message?.includes('company_id') || custInsertErr.code === 'PGRST204')) {
+            // Fallback retry if company_id column not present in schema or UUID syntax error
+            if (custInsertErr && isCompanyIdOrUuidError(custInsertErr)) {
               delete custPayload.company_id;
               const retryCust = await supabase
                 .from('customers')
@@ -519,7 +519,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           status: action === 'draft' ? 'UNPAID' : 'PAID',
           notes: notes.trim()
         };
-        if (currentCompanyId) {
+        if (currentCompanyId && isValidUUID(currentCompanyId)) {
           invPayload.company_id = currentCompanyId;
         }
 
@@ -529,9 +529,9 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           .select()
           .single();
 
-        // Resilient fallback retry: If Supabase schema does not have company_id column, retry without it
-        if (invError && (invError.message?.includes('company_id') || invError.code === 'PGRST204')) {
-          console.warn('Database schema does not have company_id column yet. Retrying insert with fallback...');
+        // Resilient fallback retry: If Supabase schema does not have company_id column or UUID mismatch, retry without it
+        if (invError && isCompanyIdOrUuidError(invError)) {
+          console.warn('Database schema company_id/UUID fallback activated. Retrying insert...');
           delete invPayload.company_id;
           const retryRes = await supabase
             .from('invoices')

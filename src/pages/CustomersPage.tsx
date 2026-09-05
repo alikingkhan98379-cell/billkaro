@@ -18,7 +18,7 @@ import { useCompany } from '../context/CompanyContext';
 import { supabase } from '../lib/supabase';
 import { Customer } from '../types';
 import { Modal } from '../components/common/Modal';
-import { isValidIndianPhone, isValidGSTIN, isValidEmail } from '../utils/validators';
+import { isValidIndianPhone, isValidGSTIN, isValidEmail, isValidUUID, isCompanyIdOrUuidError } from '../utils/validators';
 import { verifyGSTINWithBackend } from '../utils/gstinService';
 
 export const CustomersPage: React.FC = () => {
@@ -188,7 +188,7 @@ export const CustomersPage: React.FC = () => {
           state: state.trim(),
           address: address.trim()
         };
-        if (currentId) {
+        if (currentId && isValidUUID(currentId)) {
           custPayload.company_id = currentId;
         }
 
@@ -198,8 +198,8 @@ export const CustomersPage: React.FC = () => {
           .select()
           .single();
 
-        // Fallback retry if company_id column not present in schema
-        if (error && (error.message?.includes('company_id') || error.code === 'PGRST204')) {
+        // Fallback retry if company_id column not present in schema or UUID syntax error
+        if (error && isCompanyIdOrUuidError(error)) {
           delete custPayload.company_id;
           const retryRes = await supabase
             .from('customers')

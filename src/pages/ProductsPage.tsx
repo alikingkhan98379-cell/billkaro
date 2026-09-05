@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase';
 import { Product } from '../types';
 import { formatINR } from '../utils/currency';
 import { Modal } from '../components/common/Modal';
-import { isValidHSN } from '../utils/validators';
+import { isValidHSN, isValidUUID, isCompanyIdOrUuidError } from '../utils/validators';
 
 export const ProductsPage: React.FC = () => {
   const { user } = useAuth();
@@ -139,7 +139,7 @@ export const ProductsPage: React.FC = () => {
           unit: unit.trim(),
           gst_percent: Number(gstPercent)
         };
-        if (currentId) {
+        if (currentId && isValidUUID(currentId)) {
           prodPayload.company_id = currentId;
         }
 
@@ -149,8 +149,8 @@ export const ProductsPage: React.FC = () => {
           .select()
           .single();
 
-        // Fallback retry if company_id column not present in schema
-        if (error && (error.message?.includes('company_id') || error.code === 'PGRST204')) {
+        // Fallback retry if company_id column not present in schema or UUID syntax error
+        if (error && isCompanyIdOrUuidError(error)) {
           delete prodPayload.company_id;
           const retryRes = await supabase
             .from('products')
