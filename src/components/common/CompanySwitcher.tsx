@@ -135,28 +135,31 @@ export const CompanySwitcher: React.FC<CompanySwitcherProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl transition text-left cursor-pointer min-h-[38px] group"
+        className="w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl transition text-left cursor-pointer min-h-[38px] group"
         aria-haspopup="true"
         aria-expanded={isOpen}
       >
-        <div className="w-6 h-6 rounded-lg bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shrink-0 text-xs font-bold shadow-xs">
-          <Building2 className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="w-6 h-6 rounded-lg bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shrink-0 text-xs font-bold shadow-xs">
+            <Building2 className="w-3.5 h-3.5" />
+          </div>
+
+          <div className="flex flex-col min-w-0 pr-1 flex-1">
+            <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider leading-none">
+              Company
+            </span>
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-[105px] sm:max-w-[160px] leading-tight mt-0.5">
+              {activeCompany?.name || 'My Business'}
+            </span>
+          </div>
         </div>
 
-        <div className="flex flex-col min-w-0 pr-1">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider leading-none">
-            Company
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+            {currentCount}/{maxCompanies}
           </span>
-          <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-[130px] sm:max-w-[180px] leading-tight mt-0.5">
-            {activeCompany?.name || 'My Business'}
-          </span>
+          <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
         </div>
-
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
-          {currentCount}/{maxCompanies}
-        </span>
-
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown Menu */}
