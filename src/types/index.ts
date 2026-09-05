@@ -1,7 +1,8 @@
 export type TaxType = 'CGST_SGST' | 'IGST' | 'NONE';
 export type InvoiceStatus = 'PAID' | 'UNPAID' | 'PARTIAL' | 'OVERDUE';
 export type SubscriptionPlan = 'free' | 'premium';
-export type NotificationType = 'payment' | 'invoice_created' | 'invoice_overdue' | 'welcome' | 'system' | 'security';
+export type PremiumState = 'LOADING' | 'FREE' | 'PREMIUM_ACTIVE' | 'PREMIUM_EXPIRED';
+export type NotificationType = 'payment' | 'PAYMENT_APPROVED' | 'invoice_created' | 'invoice_overdue' | 'welcome' | 'system' | 'security';
 
 export interface BusinessProfile {
   id: string;

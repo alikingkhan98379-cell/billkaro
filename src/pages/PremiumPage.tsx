@@ -29,6 +29,8 @@ export const PremiumPage: React.FC = () => {
     user, 
     subscription, 
     isPremium, 
+    premiumState,
+    subscriptionLoading,
     daysRemaining,
     createPaymentOrder, 
     submitPaymentProof, 
@@ -343,11 +345,23 @@ export const PremiumPage: React.FC = () => {
         </div>
       )}
 
+      {/* LOADING STATE SKELETON */}
+      {premiumState === 'LOADING' && (
+        <div className="p-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 animate-pulse flex items-center gap-3 text-slate-500 text-sm font-semibold">
+          <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
+          <span>Verifying Pro subscription status...</span>
+        </div>
+      )}
+
       {/* PLAN SELECTION CARDS */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">1. Select Your Subscription Plan</h3>
-          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">All prices inclusive of GST</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <h3 className="text-base font-bold text-slate-900 dark:text-white">
+            {isPremium ? '1. Extend / Renew Your Plan (Adds to Current Expiry)' : '1. Select Your Subscription Plan'}
+          </h3>
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+            {isPremium ? '✨ Duration extends from current expiry date' : 'All prices inclusive of GST'}
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

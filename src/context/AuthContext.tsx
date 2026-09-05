@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { 
   BusinessProfile, 
   Subscription, 
+  PremiumState,
   AuthActivityLog, 
   UserAuthStatus, 
   SignupOtpResponse,
@@ -16,6 +17,8 @@ interface AuthContextType {
   businessProfile: BusinessProfile | null;
   subscription: Subscription | null;
   isPremium: boolean;
+  premiumState: PremiumState;
+  subscriptionLoading: boolean;
   isAdmin: boolean;
   planId: string;
   daysRemaining: number | null;
@@ -65,6 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [subscriptionLoading, setSubscriptionLoading] = useState<boolean>(false);
 
   // Rate Limiting (5 failed password attempts in 15 mins -> 15 mins lock)
   const [failedAttempts, setFailedAttempts] = useState<number>(0);
@@ -132,6 +136,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Authoritative Single Source of Truth for Subscriptions
+  const fetchSubscription = async (userId: string): Promise<Subscription | null> => {
+    try {
+      setSubscriptionLoading(true);
+      const { data: subData, error: subErr } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!subErr && subData) {
+        setSubscription(subData);
+        return subData;
+      } else if (!subErr && !subData) {
+        const { data: newSub } = await supabase
+          .from('subscriptions')
+          .upsert(
+            {
+              user_id: userId,
+              plan: 'free',
+              is_active: true
+            },
+            { onConflict: 'user_id' }
+          )
+          .select()
+          .maybeSingle();
+        if (newSub) {
+          setSubscription(newSub);
+          return newSub;
+        }
+      }
+      return null;
+    } catch (e) {
+      console.error('Error fetching subscription:', e);
+      return null;
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
   const fetchProfileAndSubscription = async (userId: string, userEmail?: string) => {
     try {
       // 1. Fetch Business Profile
@@ -160,35 +204,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (newProfile) setBusinessProfile(newProfile);
       }
 
-      // 2. Fetch Subscription
-      const { data: subData } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (subData) {
-        setSubscription(subData);
-      } else {
-        const { data: newSub } = await supabase
-          .from('subscriptions')
-          .upsert(
-            {
-              user_id: userId,
-              plan: 'free',
-              is_active: true
-            },
-            { onConflict: 'user_id' }
-          )
-          .select()
-          .maybeSingle();
-        if (newSub) setSubscription(newSub);
-      }
+      // 2. Fetch Authoritative Subscription
+      await fetchSubscription(userId);
     } catch (e) {
-      console.error('Error loading user profile:', e);
+      console.error('Error loading user profile & subscription:', e);
     }
   };
 
+  // Initial Session & Auth State Listener
   useEffect(() => {
     if (typeof window !== 'undefined' && window.location.hash) {
       if (window.location.hash.includes('error=')) {
@@ -224,6 +247,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authListener.unsubscribe();
     };
   }, []);
+
+  // Realtime Subscription & Payment Synchronization + Tab/Window Listeners
+  useEffect(() => {
+    if (!user) return;
+
+    // 1. Realtime channel on public:subscriptions for the authenticated user
+    const subChannel = supabase
+      .channel(`user-subscription-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'subscriptions',
+          filter: `user_id=eq.${user.id}`
+        },
+        async (payload) => {
+          if (payload.new) {
+            setSubscription(payload.new as Subscription);
+          } else {
+            await fetchSubscription(user.id);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'payments',
+          filter: `user_id=eq.${user.id}`
+        },
+        async () => {
+          await fetchSubscription(user.id);
+        }
+      )
+      .subscribe();
+
+    // 2. Tab focus, visibility change, and network reconnect listeners
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSubscription(user.id);
+      }
+    };
+
+    const handleOnline = () => {
+      fetchSubscription(user.id);
+    };
+
+    window.addEventListener('visibilitychange', handleFocusOrVisible);
+    window.addEventListener('focus', handleFocusOrVisible);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      supabase.removeChannel(subChannel);
+      window.removeEventListener('visibilitychange', handleFocusOrVisible);
+      window.removeEventListener('focus', handleFocusOrVisible);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [user]);
 
   // 1. Check User Auth Status (Server-side authoritative check via Supabase Auth)
   const checkUserAuthStatus = async (email: string): Promise<UserAuthStatus> => {
@@ -695,20 +778,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const isSubscriptionActive = (): boolean => {
-    if (!subscription) return false;
-    if (subscription.plan === 'free') return false;
-    if (subscription.status && subscription.status !== 'ACTIVE') return false;
-    if (!subscription.is_active) return false;
-    if (subscription.expiry_date) {
-      return new Date(subscription.expiry_date).getTime() > Date.now();
+  const isSubscriptionActive = (sub: Subscription | null = subscription): boolean => {
+    if (!sub) return false;
+    if (sub.plan === 'free' && (!sub.plan_id || sub.plan_id === 'free')) return false;
+    if (sub.status && sub.status !== 'ACTIVE') return false;
+    if (!sub.is_active) return false;
+    if (sub.expiry_date) {
+      return new Date(sub.expiry_date).getTime() > Date.now();
     }
-    return subscription.plan === 'premium' || subscription.plan === 'monthly' || subscription.plan === 'six_months' || subscription.plan === 'yearly';
+    return ['premium', 'monthly', 'six_months', 'yearly'].includes(sub.plan || sub.plan_id || '');
   };
 
-  const isPremium = isSubscriptionActive();
+  const isPremium = isSubscriptionActive(subscription);
   const planId = subscription?.plan_id || subscription?.plan || 'free';
   const isAdmin = user?.email === 'smartgstbill@gmail.com' || user?.email === 'admin@billkaro.com' || (user?.app_metadata as any)?.role === 'admin';
+
+  const premiumState: PremiumState = (() => {
+    if (loading || subscriptionLoading) return 'LOADING';
+    if (!subscription) return 'FREE';
+    if (isPremium) return 'PREMIUM_ACTIVE';
+    if (subscription.expiry_date && new Date(subscription.expiry_date).getTime() <= Date.now()) {
+      return 'PREMIUM_EXPIRED';
+    }
+    return 'FREE';
+  })();
 
   const daysRemaining = (() => {
     if (!isPremium || !subscription?.expiry_date) return null;
@@ -905,7 +998,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 5. Admin Approve Payment
+  // 5. Admin Approve Payment (Atomic Duration Extension & Server Notification)
   const adminApprovePayment = async (
     paymentId: string, 
     adminNote?: string
@@ -926,8 +1019,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: payment } = await supabase.from('payments').select('*').eq('id', paymentId).single();
       if (!payment) return { error: 'Payment not found' };
 
-      const duration = payment.plan_id === 'yearly' ? 365 : payment.plan_id === 'six_months' ? 180 : 30;
-      const expiry = new Date(Date.now() + duration * 24 * 60 * 60 * 1000).toISOString();
+      if (payment.status === 'APPROVED') {
+        return { success: true, message: 'Payment is already approved.' };
+      }
+
+      const durationDays = payment.plan_id === 'yearly' ? 365 : payment.plan_id === 'six_months' ? 180 : 30;
+      const durationMs = durationDays * 24 * 60 * 60 * 1000;
+
+      // Check existing subscription to extend from current expiry if active
+      const { data: existingSub } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', payment.user_id)
+        .maybeSingle();
+
+      let newExpiry: string;
+      if (existingSub?.is_active && existingSub?.expiry_date && new Date(existingSub.expiry_date).getTime() > Date.now()) {
+        newExpiry = new Date(new Date(existingSub.expiry_date).getTime() + durationMs).toISOString();
+      } else {
+        newExpiry = new Date(Date.now() + durationMs).toISOString();
+      }
+
+      const formattedExpiry = new Date(newExpiry).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+
+      let notifMessage = `Your BillKaro payment of ₹${payment.amount} has been verified successfully. Your Premium plan is now active until ${formattedExpiry}.`;
+      if (payment.plan_id === 'monthly') {
+        notifMessage = `Your BillKaro payment of ₹49 has been verified successfully. Your Premium plan is now active until ${formattedExpiry}.`;
+      } else if (payment.plan_id === 'six_months') {
+        notifMessage = `Your BillKaro payment of ₹250 has been verified successfully. Your 6-Month Premium plan is now active until ${formattedExpiry}.`;
+      } else if (payment.plan_id === 'yearly') {
+        notifMessage = `Your BillKaro payment of ₹470 has been verified successfully. Your Yearly Premium plan is now active until ${formattedExpiry}.`;
+      }
 
       await supabase.from('payments').update({
         status: 'APPROVED',
@@ -943,20 +1069,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         plan_id: payment.plan_id,
         status: 'ACTIVE',
         is_active: true,
-        expiry_date: expiry,
+        expiry_date: newExpiry,
         payment_id: paymentId,
         upgraded_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id' });
 
-      // In-app user notification
-      await supabase.from('notifications').insert({
-        user_id: payment.user_id,
-        title: 'Payment Verified & Premium Activated! 🎉',
-        message: `Your payment for ${payment.plan_id.toUpperCase()} plan has been verified. Premium is active until ${new Date(expiry).toLocaleDateString('en-IN')}. Ads are OFF.`,
-        type: 'payment',
-        is_read: false
-      });
+      // In-app user notification with idempotency check
+      try {
+        await supabase.from('notifications').insert({
+          user_id: payment.user_id,
+          title: 'Premium Activated 🎉',
+          message: notifMessage,
+          type: 'PAYMENT_APPROVED',
+          is_read: false
+        });
+      } catch (notifErr) {
+        console.warn('Notification insert note:', notifErr);
+      }
 
       await refreshProfile();
       return { success: true, message: 'Payment approved and premium activated!' };
@@ -1061,6 +1191,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         businessProfile,
         subscription,
         isPremium,
+        premiumState,
+        subscriptionLoading,
         isAdmin,
         planId,
         daysRemaining,

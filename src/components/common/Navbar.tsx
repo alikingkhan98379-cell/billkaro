@@ -29,7 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   mobileMenuOpen,
   setMobileMenuOpen
 }) => {
-  const { user, businessProfile, isPremium, isAdmin, signOut } = useAuth();
+  const { user, businessProfile, isPremium, premiumState, isAdmin, signOut } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const { currentRoute, navigate } = useRouter();
   const { theme, setTheme, isDark } = useTheme();
@@ -109,7 +109,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => navigate('premium')}
               className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition hover:opacity-90 cursor-pointer"
             >
-              {isPremium ? (
+              {premiumState === 'LOADING' ? (
+                <div className="flex items-center gap-1.5 text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 animate-pulse text-[11px] font-medium">
+                  <Sparkles className="w-3 h-3 text-slate-400" />
+                  <span>Checking status...</span>
+                </div>
+              ) : isPremium ? (
                 <div className="flex items-center gap-1 text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 fill-indigo-600 dark:fill-indigo-400" />
                   <span>Pro Active (Ads OFF)</span>

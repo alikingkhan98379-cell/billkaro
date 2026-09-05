@@ -956,8 +956,14 @@ BEGIN
     INSERT INTO public.notifications (user_id, title, message, type, is_read)
     VALUES (
         v_payment.user_id,
-        'Payment Verified & Premium Activated! 🎉',
-        'Your payment for ' || upper(v_payment.plan_id) || ' plan has been verified. Premium is active until ' || to_char(v_new_expiry, 'DD Mon YYYY') || '. Ads are OFF.',
+        'Premium Activated 🎉',
+        'Your BillKaro payment of ₹' || v_payment.amount || ' for ' || 
+            CASE 
+                WHEN v_payment.plan_id = 'monthly' THEN 'Monthly Plan (₹49)'
+                WHEN v_payment.plan_id = 'six_months' THEN '6-Month Plan (₹250)'
+                WHEN v_payment.plan_id = 'yearly' THEN 'Yearly Plan (₹470)'
+                ELSE upper(v_payment.plan_id)
+            END || ' has been verified! Premium is active until ' || to_char(v_new_expiry, 'DD Mon YYYY') || '. Ads are OFF.',
         'payment',
         false
     );

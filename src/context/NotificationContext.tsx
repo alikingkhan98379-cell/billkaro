@@ -58,28 +58,50 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          const newNotif = payload.new as Notification;
-          setNotifications(prev => {
-            if (prev.some(n => n.id === newNotif.id)) return prev;
-            return [newNotif, ...prev];
-          });
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const newNotif = payload.new as Notification;
+            setNotifications(prev => {
+              if (prev.some(n => n.id === newNotif.id)) return prev;
+              return [newNotif, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE' && payload.new) {
+            const updated = payload.new as Notification;
+            setNotifications(prev => prev.map(n => n.id === updated.id ? updated : n));
+          } else if (payload.eventType === 'DELETE' && payload.old) {
+            const deletedId = (payload.old as any).id;
+            setNotifications(prev => prev.filter(n => n.id !== deletedId));
+          } else {
+            fetchNotifications();
+          }
         }
       )
       .subscribe();
 
-    // 2. Periodic Polling fallback every 30 seconds
+    // 2. Tab focus & visibility change listeners
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchNotifications();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleFocusOrVisible);
+    window.addEventListener('focus', handleFocusOrVisible);
+
+    // 3. Periodic Polling fallback every 30 seconds
     const interval = setInterval(() => {
       fetchNotifications();
     }, 30000);
 
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('visibilitychange', handleFocusOrVisible);
+      window.removeEventListener('focus', handleFocusOrVisible);
       clearInterval(interval);
     };
   }, [user]);
