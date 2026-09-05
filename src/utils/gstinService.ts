@@ -75,8 +75,10 @@ export interface GSTVerificationResult {
 // 3. Niche GST_API_KEYS array me add karein.
 // =========================================================================
 export const GST_API_KEYS: string[] = [
-  'b327cfadf9231bd5156f7285a4c08d0c', // 🌟 Active Key #1
-  '8e5294b4113c9b01e0d29b170b7346b1', // 🛡️ Backup Key #2
+  '387e02108151091b63066da519eabd08', // 🌟 Active Primary Key #1 (Fresh)
+  '36cd6f1c53028b1573cdc2fb017055d2', // 🛡️ Active Backup Key #2 (Fresh)
+  'b327cfadf9231bd5156f7285a4c08d0c', // 🛡️ Key #3
+  '8e5294b4113c9b01e0d29b170b7346b1', // 🛡️ Key #4
   // Nayi API Keys yahan add karein (comma laga kar):
   // 'YOUR_NEXT_KEY_HERE',
 ];
