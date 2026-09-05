@@ -22,6 +22,7 @@ import { NotificationsPage } from './pages/NotificationsPage';
 import { PremiumPage } from './pages/PremiumPage';
 import { PrivacyTermsPage } from './pages/PrivacyTermsPage';
 import { AdminPaymentsPage } from './pages/AdminPaymentsPage';
+import { HelpSupportPage } from './pages/HelpSupportPage';
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -77,6 +78,7 @@ const AppContent: React.FC = () => {
           {currentRoute === 'premium' && <PremiumPage />}
           {currentRoute === 'privacy-terms' && <PrivacyTermsPage />}
           {currentRoute === 'admin-payments' && <AdminPaymentsPage />}
+          {currentRoute === 'help-support' && <HelpSupportPage />}
         </main>
       </div>
 

@@ -10,7 +10,8 @@ import {
   Menu,
   X,
   Sun,
-  Moon
+  Moon,
+  HelpCircle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -265,6 +266,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                     >
                       <ShieldCheck className="w-4 h-4 text-emerald-500" />
                       <span>Privacy & Terms</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigate('help-support');
+                        setShowUserMenu(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center gap-2 cursor-pointer"
+                    >
+                      <HelpCircle className="w-4 h-4 text-blue-500" />
+                      <span>Help & Support</span>
                     </button>
                   </div>
 

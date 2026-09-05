@@ -9,7 +9,8 @@ import {
   Sparkles, 
   ShieldCheck,
   Bell,
-  X
+  X,
+  HelpCircle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -47,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'notifications', label: 'Notifications', icon: Bell, badge: unreadCount },
     { id: 'premium', label: isPremium ? 'Pro Active (Ads OFF)' : 'Upgrade to Pro', icon: Sparkles, gold: true },
     ...(isAdmin ? [{ id: 'admin-payments' as AppRoute, label: 'Admin Payments', icon: ShieldCheck, admin: true }] : []),
+    { id: 'help-support', label: 'Help & Support', icon: HelpCircle },
     { id: 'privacy-terms', label: 'Privacy & Terms', icon: ShieldCheck }
   ];
 

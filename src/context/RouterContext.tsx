@@ -10,7 +10,8 @@ export type AppRoute =
   | 'notifications'
   | 'premium'
   | 'privacy-terms'
-  | 'admin-payments';
+  | 'admin-payments'
+  | 'help-support';
 
 interface RouterContextType {
   currentRoute: AppRoute;
@@ -31,7 +32,8 @@ const VALID_ROUTES: AppRoute[] = [
   'notifications',
   'premium',
   'privacy-terms',
-  'admin-payments'
+  'admin-payments',
+  'help-support'
 ];
 
 function parseCurrentRoute(): AppRoute {

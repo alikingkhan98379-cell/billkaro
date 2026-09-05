@@ -12,11 +12,14 @@ import {
   Clock, 
   Copy, 
   ExternalLink,
-  Download
+  Download,
+  HelpCircle,
+  MessageSquare
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
+import { useRouter } from '../context/RouterContext';
 import { PLANS_CONFIG, PlanId, generateUpiUri, UPI_CONFIG } from '../config/plans';
 import { uploadPaymentProof } from '../utils/storage';
 import { PaymentRecord } from '../types';
@@ -31,6 +34,7 @@ export const PremiumPage: React.FC = () => {
     submitPaymentProof, 
     fetchUserPayments 
   } = useAuth();
+  const { navigate } = useRouter();
 
   // Selected Plan state
   const [selectedPlanId, setSelectedPlanId] = useState<PlanId>('yearly');
@@ -315,6 +319,25 @@ export const PremiumPage: React.FC = () => {
               <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
                 ⏱️ <strong>SLA Notice:</strong> Premium activation is completed as soon as your transaction is verified, within a maximum verification window of <strong>4 hours</strong>.
               </p>
+              <div className="pt-2 flex flex-wrap items-center gap-2">
+                <a
+                  href={`https://wa.me/919638938258?text=${encodeURIComponent(`Hi BillKaro Support, please check my payment status for Order #${activePendingPayment.order_id} (UTR: ${activePendingPayment.utr || ''}). Account: ${user?.email || ''}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>WhatsApp Billing Desk</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => navigate('help-support')}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs rounded-xl transition"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-blue-500" />
+                  <span>Help & Support Center</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
