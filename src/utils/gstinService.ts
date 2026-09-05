@@ -60,8 +60,21 @@ export interface GSTVerificationResult {
   isRateLimited?: boolean;
 }
 
-// Active API Key
-const GST_API_KEY = '8e5294b4113c9b01e0d29b170b7346b1';
+// =========================================================================
+// 🔑 GSTINCHECK API KEYS VAULT (MULTI-KEY POOL & ROTATION)
+// =========================================================================
+// Agar pehli key ke credits khatam ho jayein ya expire ho jaye,
+// toh system automatically agli backup key use karega.
+//
+// 📍 MANUAL EDIT LOCATION:
+// File: src/utils/gstinService.ts -> GST_API_KEYS array
+// =========================================================================
+const GST_API_KEYS: string[] = [
+  'b327cfadf9231bd5156f7285a4c08d0c', // 🌟 Primary Active Key (Updated)
+  '8e5294b4113c9b01e0d29b170b7346b1', // 🛡️ Backup Key #2
+  // Future me aur keys add karne ke liye niche comma laga kar daalein:
+  // 'YOUR_NEXT_KEY_HERE',
+];
 
 export function getStateFromGSTIN(gstin: string): string {
   const clean = gstin.trim().toUpperCase();
@@ -74,6 +87,7 @@ export function getStateFromGSTIN(gstin: string): string {
 
 /**
  * Verifies GSTIN and fetches complete Company Name, Trade Name, Address, and State.
+ * Automatically tries all available API keys in sequence until success.
  */
 export async function verifyGSTINWithBackend(rawGstin: string): Promise<GSTVerificationResult> {
   const cleanGstin = rawGstin.trim().toUpperCase();
@@ -101,87 +115,102 @@ export async function verifyGSTINWithBackend(rawGstin: string): Promise<GSTVerif
       };
     }
 
-    // 2. Direct secure client lookup fallback (for local dev & instant response)
-    const url = `https://sheet.gstincheck.co.in/check/${GST_API_KEY}/${encodeURIComponent(cleanGstin)}`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    // 2. Multi-Key Fallback Engine: Tries keys in sequence until a valid response is returned
+    const envKeys = ((import.meta as any).env?.VITE_GSTINCHECK_API_KEYS || '')
+      .split(',')
+      .map((k: string) => k.trim())
+      .filter(Boolean);
+    const keyPool = Array.from(new Set([...envKeys, ...GST_API_KEYS].filter(Boolean)));
 
-    if (!res.ok) {
-      return {
-        success: true,
-        data: {
-          gstin: cleanGstin,
-          company_name: '',
-          legal_name: '',
-          trade_name: '',
-          address: '',
-          state: fallbackState
-        },
-        notice: `State '${fallbackState}' auto-detected!`
-      };
+    let lastErrorMessage = '';
+
+    for (const apiKey of keyPool) {
+      try {
+        const url = `https://sheet.gstincheck.co.in/check/${apiKey}/${encodeURIComponent(cleanGstin)}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+        const res = await fetch(url, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          continue; // Try next fallback key
+        }
+
+        const apiJson = await res.json();
+        if (apiJson.flag === false || apiJson.status === false) {
+          lastErrorMessage = apiJson.message || '';
+          continue; // Try next fallback key in pool
+        }
+
+        const rawData = apiJson.data || {};
+        const tradeName = rawData.tradeNam || rawData.trade_name || rawData.tradeName || rawData.lgnm || '';
+        const legalName = rawData.lgnm || rawData.legal_name || rawData.legalName || tradeName || '';
+        const companyName = tradeName || legalName || '';
+
+        let formattedAddress = '';
+        if (typeof rawData.pradr?.adr === 'string' && rawData.pradr.adr.trim()) {
+          formattedAddress = rawData.pradr.adr.trim();
+        } else if (rawData.pradr?.addr) {
+          const addrObj = rawData.pradr.addr;
+          const parts = [
+            addrObj.bno && addrObj.bno !== '0' ? addrObj.bno : '',
+            addrObj.bnm,
+            addrObj.flno,
+            addrObj.st,
+            addrObj.loc,
+            addrObj.city,
+            addrObj.dst,
+            addrObj.stcd,
+            addrObj.pncd
+          ].filter(Boolean);
+          formattedAddress = parts.join(', ');
+        } else if (typeof rawData.address === 'string') {
+          formattedAddress = rawData.address.trim();
+        }
+
+        if (formattedAddress.startsWith('0, 0, ')) {
+          formattedAddress = formattedAddress.replace(/^0,\s*0,\s*/, '');
+        }
+
+        const state = (rawData.pradr && rawData.pradr.addr && rawData.pradr.addr.stcd) || rawData.state || fallbackState;
+        const pincode = (rawData.pradr && rawData.pradr.addr && rawData.pradr.addr.pncd) || rawData.pincode || '';
+        const gstStatus = rawData.sts || rawData.status || 'Active';
+
+        return {
+          success: true,
+          data: {
+            gstin: cleanGstin,
+            company_name: companyName,
+            legal_name: legalName,
+            trade_name: tradeName,
+            address: formattedAddress,
+            state: state,
+            pincode: pincode,
+            status: gstStatus
+          }
+        };
+      } catch (keyErr) {
+        console.warn('GST key attempt error, trying next fallback key:', keyErr);
+        continue;
+      }
     }
 
-    const apiJson = await res.json();
-    if (apiJson.flag === false || apiJson.status === false) {
-      return {
-        success: true,
-        data: {
-          gstin: cleanGstin,
-          company_name: '',
-          legal_name: '',
-          trade_name: '',
-          address: '',
-          state: fallbackState
-        },
-        notice: apiJson.message || `State '${fallbackState}' auto-detected!`
-      };
-    }
-
-    const rawData = apiJson.data || {};
-    const tradeName = rawData.tradeNam || rawData.trade_name || rawData.tradeName || rawData.lgnm || '';
-    const legalName = rawData.lgnm || rawData.legal_name || rawData.legalName || tradeName || '';
-    const companyName = tradeName || legalName || '';
-
-    let formattedAddress = '';
-    if (typeof rawData.pradr?.adr === 'string' && rawData.pradr.adr.trim()) {
-      formattedAddress = rawData.pradr.adr.trim();
-    } else if (rawData.pradr?.addr) {
-      const addrObj = rawData.pradr.addr;
-      const parts = [
-        addrObj.bno && addrObj.bno !== '0' ? addrObj.bno : '',
-        addrObj.bnm,
-        addrObj.flno,
-        addrObj.st,
-        addrObj.loc,
-        addrObj.city,
-        addrObj.dst,
-        addrObj.stcd,
-        addrObj.pncd
-      ].filter(Boolean);
-      formattedAddress = parts.join(', ');
-    } else if (typeof rawData.address === 'string') {
-      formattedAddress = rawData.address.trim();
-    }
-
-    if (formattedAddress.startsWith('0, 0, ')) {
-      formattedAddress = formattedAddress.replace(/^0,s*0,s*/, '');
-    }
-
-    const state = (rawData.pradr && rawData.pradr.addr && rawData.pradr.addr.stcd) || rawData.state || fallbackState;
-    const pincode = (rawData.pradr && rawData.pradr.addr && rawData.pradr.addr.pncd) || rawData.pincode || '';
-    const gstStatus = rawData.sts || rawData.status || 'Active';
-
+    // If all keys in the pool were exhausted or rate limited, gracefully return auto-detected state
     return {
       success: true,
       data: {
         gstin: cleanGstin,
-        company_name: companyName,
-        legal_name: legalName,
-        trade_name: tradeName,
-        address: formattedAddress,
-        state: state,
-        pincode: pincode,
-        status: gstStatus
-      }
+        company_name: '',
+        legal_name: '',
+        trade_name: '',
+        address: '',
+        state: fallbackState
+      },
+      notice: lastErrorMessage || `State '${fallbackState}' auto-detected!`
     };
   } catch (err: any) {
     console.error('GSTIN verification fetch error:', err);
@@ -199,3 +228,4 @@ export async function verifyGSTINWithBackend(rawGstin: string): Promise<GSTVerif
     };
   }
 }
+
