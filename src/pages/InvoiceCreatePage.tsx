@@ -129,7 +129,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
 
         const { data: invList } = await supabase
           .from('invoices')
-          .select('invoice_number, invoice_date, created_at, company_id')
+          .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
 
@@ -464,20 +464,35 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
         let finalCustomerId = selectedCustomerId && !selectedCustomerId.startsWith('temp_') ? selectedCustomerId : null;
         if (saveToDirectory && customerName.trim() && customerName !== 'Cash Customer' && !finalCustomerId) {
           try {
-            const { data: newCust } = await supabase
+            const custPayload: Record<string, any> = {
+              user_id: currentUserId,
+              name: customerName.trim(),
+              phone: customerPhone.trim(),
+              email: customerEmail.trim(),
+              gstin: customerGstin.trim().toUpperCase(),
+              address: customerAddress.trim(),
+              state: customerState.trim() || 'Delhi'
+            };
+            if (currentCompanyId) {
+              custPayload.company_id = currentCompanyId;
+            }
+
+            let { data: newCust, error: custInsertErr } = await supabase
               .from('customers')
-              .insert({
-                user_id: currentUserId,
-                company_id: currentCompanyId,
-                name: customerName.trim(),
-                phone: customerPhone.trim(),
-                email: customerEmail.trim(),
-                gstin: customerGstin.trim().toUpperCase(),
-                address: customerAddress.trim(),
-                state: customerState.trim() || 'Delhi'
-              })
+              .insert(custPayload)
               .select()
               .single();
+
+            // Fallback retry if company_id column not present in schema
+            if (custInsertErr && (custInsertErr.message?.includes('company_id') || custInsertErr.code === 'PGRST204')) {
+              delete custPayload.company_id;
+              const retryCust = await supabase
+                .from('customers')
+                .insert(custPayload)
+                .select()
+                .single();
+              newCust = retryCust.data;
+            }
 
             if (newCust) {
               finalCustomerId = newCust.id;
@@ -488,27 +503,44 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           }
         }
 
-        const { data: invData, error: invError } = await supabase
+        const invPayload: Record<string, any> = {
+          user_id: currentUserId,
+          customer_id: finalCustomerId,
+          invoice_number: invoiceNumber.trim(),
+          invoice_date: invoiceDate,
+          due_date: dueDate || null,
+          tax_type: taxType,
+          subtotal: totals.subtotal,
+          cgst: totals.cgst,
+          sgst: totals.sgst,
+          igst: totals.igst,
+          discount: totals.discountAmount,
+          grand_total: totals.grandTotal,
+          status: action === 'draft' ? 'UNPAID' : 'PAID',
+          notes: notes.trim()
+        };
+        if (currentCompanyId) {
+          invPayload.company_id = currentCompanyId;
+        }
+
+        let { data: invData, error: invError } = await supabase
           .from('invoices')
-          .insert({
-            user_id: currentUserId,
-            company_id: currentCompanyId,
-            customer_id: finalCustomerId,
-            invoice_number: invoiceNumber.trim(),
-            invoice_date: invoiceDate,
-            due_date: dueDate || null,
-            tax_type: taxType,
-            subtotal: totals.subtotal,
-            cgst: totals.cgst,
-            sgst: totals.sgst,
-            igst: totals.igst,
-            discount: totals.discountAmount,
-            grand_total: totals.grandTotal,
-            status: action === 'draft' ? 'UNPAID' : 'PAID',
-            notes: notes.trim()
-          })
+          .insert(invPayload)
           .select()
           .single();
+
+        // Resilient fallback retry: If Supabase schema does not have company_id column, retry without it
+        if (invError && (invError.message?.includes('company_id') || invError.code === 'PGRST204')) {
+          console.warn('Database schema does not have company_id column yet. Retrying insert with fallback...');
+          delete invPayload.company_id;
+          const retryRes = await supabase
+            .from('invoices')
+            .insert(invPayload)
+            .select()
+            .single();
+          invData = retryRes.data;
+          invError = retryRes.error;
+        }
 
         if (invError) {
           console.warn('Database save note:', invError.message);

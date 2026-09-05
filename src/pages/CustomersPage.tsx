@@ -179,20 +179,36 @@ export const CustomersPage: React.FC = () => {
         const primaryId = companies.length > 0 ? companies[0].id : null;
         const currentId = activeCompany?.id || activeCompanyId || primaryId;
 
-        const { data, error } = await supabase
+        const custPayload: Record<string, any> = {
+          user_id: user.id,
+          name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim(),
+          gstin: gstin.trim().toUpperCase(),
+          state: state.trim(),
+          address: address.trim()
+        };
+        if (currentId) {
+          custPayload.company_id = currentId;
+        }
+
+        let { data, error } = await supabase
           .from('customers')
-          .insert({
-            user_id: user.id,
-            company_id: currentId,
-            name: name.trim(),
-            phone: phone.trim(),
-            email: email.trim(),
-            gstin: gstin.trim().toUpperCase(),
-            state: state.trim(),
-            address: address.trim()
-          })
+          .insert(custPayload)
           .select()
           .single();
+
+        // Fallback retry if company_id column not present in schema
+        if (error && (error.message?.includes('company_id') || error.code === 'PGRST204')) {
+          delete custPayload.company_id;
+          const retryRes = await supabase
+            .from('customers')
+            .insert(custPayload)
+            .select()
+            .single();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
 
         if (error) {
           setErrorMessage(error.message);

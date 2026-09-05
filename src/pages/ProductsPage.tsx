@@ -131,19 +131,35 @@ export const ProductsPage: React.FC = () => {
         const primaryId = companies.length > 0 ? companies[0].id : null;
         const currentId = activeCompany?.id || activeCompanyId || primaryId;
 
-        const { data, error } = await supabase
+        const prodPayload: Record<string, any> = {
+          user_id: user.id,
+          name: name.trim(),
+          hsn_code: hsnCode.trim(),
+          price: numPrice,
+          unit: unit.trim(),
+          gst_percent: Number(gstPercent)
+        };
+        if (currentId) {
+          prodPayload.company_id = currentId;
+        }
+
+        let { data, error } = await supabase
           .from('products')
-          .insert({
-            user_id: user.id,
-            company_id: currentId,
-            name: name.trim(),
-            hsn_code: hsnCode.trim(),
-            price: numPrice,
-            unit: unit.trim(),
-            gst_percent: Number(gstPercent)
-          })
+          .insert(prodPayload)
           .select()
           .single();
+
+        // Fallback retry if company_id column not present in schema
+        if (error && (error.message?.includes('company_id') || error.code === 'PGRST204')) {
+          delete prodPayload.company_id;
+          const retryRes = await supabase
+            .from('products')
+            .insert(prodPayload)
+            .select()
+            .single();
+          data = retryRes.data;
+          error = retryRes.error;
+        }
 
         if (error) {
           setErrorMessage(error.message);
