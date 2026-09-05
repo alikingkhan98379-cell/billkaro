@@ -67,9 +67,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  // Load cached subscription from localStorage to eliminate flicker and race condition on load
+  const [subscription, setSubscription] = useState<Subscription | null>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('billkaro_cached_sub');
+        if (cached) return JSON.parse(cached);
+      }
+    } catch (e) {}
+    return null;
+  });
   const [loading, setLoading] = useState<boolean>(true);
-  const [subscriptionLoading, setSubscriptionLoading] = useState<boolean>(false);
+  const [subscriptionLoading, setSubscriptionLoading] = useState<boolean>(true);
+
+  // Helper to keep subscription state and localStorage in sync
+  const updateSubscriptionState = (sub: Subscription | null) => {
+    setSubscription(sub);
+    try {
+      if (typeof window !== 'undefined') {
+        if (sub) {
+          localStorage.setItem('billkaro_cached_sub', JSON.stringify(sub));
+        } else {
+          localStorage.removeItem('billkaro_cached_sub');
+        }
+      }
+    } catch (e) {}
+  };
 
   // Rate Limiting (5 failed password attempts in 15 mins -> 15 mins lock)
   const [failedAttempts, setFailedAttempts] = useState<number>(0);
@@ -147,11 +170,66 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
+      let resolvedSub: Subscription | null = null;
+
       if (!subErr && subList && subList.length > 0) {
         // Prioritize any active premium subscription among records
-        const activeSub = subList.find(s => isSubscriptionActive(s)) || subList[0];
-        setSubscription(activeSub);
-        return activeSub;
+        const activeSub = subList.find(s => isSubscriptionActive(s));
+        if (activeSub) {
+          resolvedSub = activeSub;
+        } else {
+          resolvedSub = subList[0];
+        }
+      }
+
+      // Fallback / Auto-healing: If no active subscription is found in subscriptions table,
+      // check payments table for any APPROVED payment within validity period
+      if (!resolvedSub || !isSubscriptionActive(resolvedSub)) {
+        try {
+          const { data: approvedPayments } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('status', 'APPROVED')
+            .order('approved_at', { ascending: false })
+            .limit(1);
+
+          if (approvedPayments && approvedPayments.length > 0) {
+            const latestApproved = approvedPayments[0];
+            const durationDays = latestApproved.plan_id === 'yearly' ? 365 : latestApproved.plan_id === 'six_months' ? 180 : 30;
+            const approvedTime = new Date(latestApproved.approved_at || latestApproved.created_at).getTime();
+            const expiryTime = approvedTime + durationDays * 24 * 60 * 60 * 1000;
+
+            if (expiryTime > Date.now()) {
+              const healedExpiry = new Date(expiryTime).toISOString();
+              const { data: healedSub } = await supabase
+                .from('subscriptions')
+                .upsert({
+                  user_id: userId,
+                  plan: 'premium',
+                  plan_id: latestApproved.plan_id || 'monthly',
+                  status: 'ACTIVE',
+                  is_active: true,
+                  expiry_date: healedExpiry,
+                  payment_id: latestApproved.id,
+                  updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' })
+                .select()
+                .maybeSingle();
+
+              if (healedSub) {
+                resolvedSub = healedSub;
+              }
+            }
+          }
+        } catch (healErr) {
+          console.warn('Auto-healing subscription check note:', healErr);
+        }
+      }
+
+      if (resolvedSub) {
+        updateSubscriptionState(resolvedSub);
+        return resolvedSub;
       } else if (!subErr && (!subList || subList.length === 0)) {
         const { data: newSub } = await supabase
           .from('subscriptions')
@@ -166,7 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .select()
           .maybeSingle();
         if (newSub) {
-          setSubscription(newSub);
+          updateSubscriptionState(newSub);
           return newSub;
         }
       }
@@ -240,7 +318,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await fetchProfileAndSubscription(session.user.id, session.user.email);
         } else {
           setBusinessProfile(null);
-          setSubscription(null);
+          updateSubscriptionState(null);
         }
         setLoading(false);
       }
@@ -268,7 +346,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
         async (payload) => {
           if (payload.new) {
-            setSubscription(payload.new as Subscription);
+            updateSubscriptionState(payload.new as Subscription);
           } else {
             await fetchSubscription(user.id);
           }
@@ -783,24 +861,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isSubscriptionActive = (sub: Subscription | null = subscription): boolean => {
     if (!sub) return false;
-    const planName = (sub.plan_id || sub.plan || '').toLowerCase().trim();
+    const planName = (sub.plan_id && sub.plan_id !== 'free' ? sub.plan_id : sub.plan || '').toLowerCase().trim();
     if (!planName || planName === 'free') return false;
 
-    // Status check: must be active/approved/success or unset
+    // Explicit deactivation flag
+    if (sub.is_active === false) return false;
+
+    // Reject only if explicitly marked cancelled / expired / rejected / inactive
     if (sub.status) {
       const st = String(sub.status).trim().toUpperCase();
-      if (st !== 'ACTIVE' && st !== 'APPROVED' && st !== 'SUCCESS') {
+      if (st === 'CANCELLED' || st === 'EXPIRED' || st === 'REJECTED' || st === 'INACTIVE') {
         return false;
       }
     }
 
-    // is_active: only false if explicitly false
-    if (sub.is_active === false) return false;
-
+    // Expiry check: if expiry_date is set, it must be in the future
     if (sub.expiry_date) {
       return new Date(sub.expiry_date).getTime() > Date.now();
     }
 
+    // Pro plan designations
     return ['premium', 'monthly', 'six_months', 'yearly', 'annual', 'lifetime', 'pro'].includes(planName);
   };
 

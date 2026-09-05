@@ -143,6 +143,13 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
 
   const currentBusiness = activeCompany || businessProfile;
 
+  // Instant protection: If user is premium or on a paid plan, ensure upgrade modal is NEVER open
+  useEffect(() => {
+    if (isPremium || planId !== 'free') {
+      setUpgradeModalOpen(false);
+    }
+  }, [isPremium, planId]);
+
   useEffect(() => {
     if (!user) return;
     const loadData = async () => {
@@ -182,8 +189,8 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
           });
 
-          // Authoritative monthly limit check: only display modal if user is definitely on free plan, not loading, and not premium
-          if (!isPremium && !subscriptionLoading && planId === 'free' && thisMonthInvoices.length >= 5) {
+          // Authoritative monthly limit check: only display modal if user is definitely on confirmed free plan, not loading, and not premium
+          if (subscription && !isPremium && !subscriptionLoading && planId === 'free' && thisMonthInvoices.length >= 5) {
             setUpgradeModalOpen(true);
           }
 
@@ -1471,7 +1478,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
 
       {/* Monthly Limit Upgrade Modal */}
       <Modal
-        isOpen={upgradeModalOpen}
+        isOpen={upgradeModalOpen && !isPremium && !subscriptionLoading && planId === 'free'}
         onClose={() => setUpgradeModalOpen(false)}
         title="Monthly Free Invoice Limit Reached"
       >
