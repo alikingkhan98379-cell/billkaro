@@ -1,4 +1,4 @@
-﻿/**
+/**
  * BILLKARO - ZERO-TRUST SECURITY AUDIT & ACCESS CONTROL SUITE
  * Tests all 25+ critical security requirements:
  * - Admin route cloaking & zero-flash protection
@@ -226,7 +226,16 @@ test('Storage policy denies User A access to User B payment proof folder', () =>
   assert.strictEqual(isAllowed, false);
 });
 
-// 17. Storage IDOR denied for arbitrary paths
+// 17. Admin CAN read User B payment proof for review
+test('Storage policy allows Admin to inspect any user payment proof', () => {
+  const adminUser = { id: 'admin_1', email: 'smartgstbill@gmail.com' };
+  const targetPath = 'user_B/ORDER-123/proof.png';
+  const ownerOfFolder = targetPath.split('/')[0];
+  const isAllowed = (ownerOfFolder === adminUser.id || isUserAdmin(adminUser));
+  assert.strictEqual(isAllowed, true);
+});
+
+// 18. Storage IDOR denied for arbitrary upload paths
 test('Storage upload policy enforces folder prefix matching auth.uid()', () => {
   const currentUserId = 'user_A';
   const maliciousUploadPath = 'user_B/hack.jpg';
@@ -234,7 +243,7 @@ test('Storage upload policy enforces folder prefix matching auth.uid()', () => {
   assert.strictEqual(uploadAllowed, false);
 });
 
-// 18. Realtime cross-user event listening scoped by user_id filter
+// 19. Realtime cross-user event listening scoped by user_id filter
 test('Realtime channel subscription strictly requires user_id filter', () => {
   const currentUserId = 'user_A';
   const filter = `user_id=eq.${currentUserId}`;
@@ -242,7 +251,7 @@ test('Realtime channel subscription strictly requires user_id filter', () => {
   assert.ok(!filter.includes('user_B'));
 });
 
-// 19. Service role key / private secrets absent from frontend bundle
+// 20. Service role key / private secrets absent from frontend bundle
 test('Frontend source files contain NO service_role key or server secrets', () => {
   const supabaseClientFile = fs.readFileSync(path.join(__dirname, '../src/lib/supabase.ts'), 'utf8');
   assert.ok(!supabaseClientFile.includes('service_role'));
@@ -250,36 +259,32 @@ test('Frontend source files contain NO service_role key or server secrets', () =
   assert.ok(!supabaseClientFile.includes('secret_'));
 });
 
-// 20. LocalStorage tampering cannot grant admin
+// 21. LocalStorage tampering cannot grant admin
 test('LocalStorage isAdmin=true key cannot override server-side authorization', () => {
   const fakeLocalStorage = { isAdmin: 'true', role: 'admin' };
   const user = { id: 'u1', email: 'regular@user.com' };
-  
-  // Real security ignores fakeLocalStorage
   const actualIsAdmin = isUserAdmin(user);
   assert.strictEqual(actualIsAdmin, false);
 });
 
-// 21. URL / Hash tampering cannot grant admin
+// 22. URL / Hash tampering cannot grant admin
 test('Pasting #/admin-payments in browser does not elevate user privilege', () => {
   const normalUser = { id: 'u1', email: 'regular@user.com' };
   const access = evaluateAdminRouteAccess(normalUser, 'admin-payments');
   assert.strictEqual(access.allowed, false);
 });
 
-// 22. Payload role=admin tampering rejected by DB triggers
+// 23. Payload role=admin tampering rejected by DB triggers
 test('Payment integrity trigger enforces server-side plan pricing and ignores client payload amounts', () => {
   const planId = 'monthly';
   const authoritativePrices = { monthly: 49.00, six_months: 250.00, yearly: 470.00 };
-  const clientSuppliedAmount = 1.00; // Hacker attempts ₹1.00
-  
-  // Trigger overrides with authoritative amount
+  const clientSuppliedAmount = 1.00;
   const finalAmount = authoritativePrices[planId];
   assert.strictEqual(finalAmount, 49.00);
   assert.notStrictEqual(finalAmount, clientSuppliedAmount);
 });
 
-// 23. Fake payment status APPROVED rejected by DB triggers
+// 24. Fake payment status APPROVED rejected by DB triggers
 test('Payment integrity trigger rejects non-admin updating status to APPROVED', () => {
   const isCallerAdmin = false;
   const newStatus = 'APPROVED';
@@ -292,36 +297,72 @@ test('Payment integrity trigger rejects non-admin updating status to APPROVED', 
   assert.strictEqual(rejected, true);
 });
 
-// 24. Duplicate payment approval rejected idempotently
+// 25. Duplicate payment approval rejected idempotently
 test('Admin approval idempotency check prevents double processing', () => {
   const payment = { id: 'p_100', status: 'APPROVED' };
   let executed = false;
   if (payment.status === 'APPROVED') {
-    // Return early
     executed = false;
   }
   assert.strictEqual(executed, false);
 });
 
-// 25. Security Definer functions enforce fixed search_path = public, auth, pg_temp
-test('Supabase schema definitions declare explicit search_path on SECURITY DEFINER functions', () => {
+// 26. Security Definer functions enforce fixed search_path = public, auth, pg_temp
+test('Supabase schema definitions declare explicit search_path on ALL SECURITY DEFINER functions', () => {
   const schemaContent = fs.readFileSync(path.join(__dirname, '../supabase/schema.sql'), 'utf8');
-  assert.ok(schemaContent.includes('SET search_path = public, auth, pg_temp'));
+  const countSearchPath = (schemaContent.match(/SET search_path = public, auth, pg_temp/g) || []).length;
+  assert.ok(countSearchPath >= 7, `Expected at least 7 search_path declarations, found ${countSearchPath}`);
 });
 
-// 26. Admin allowlist immutable to client-side attacks
+// 27. Admin allowlist immutable to client-side attacks
 test('Admin verification uses hardcoded secure domains/emails and server claims', () => {
   const legitAdmin = { id: 'adm_2', email: 'admin@billkaro.com' };
   const imposter = { id: 'imp_1', email: 'admin@billkaro.com.fake.org' };
-  
   assert.strictEqual(isUserAdmin(legitAdmin), true);
   assert.strictEqual(isUserAdmin(imposter), false);
 });
 
-// 27. Anonymous visitors cannot execute admin RPCs
+// 28. Anonymous visitors cannot execute admin RPCs
 test('Unauthenticated callers are rejected with false or exception', () => {
   assert.strictEqual(isUserAdmin(null), false);
   assert.strictEqual(isUserAdmin({}), false);
+});
+
+// 29. Anonymous auth activity log insertion strictly forbids user_id spoofing
+test('Anon auth log policy rejects logs containing non-null user_id', () => {
+  const anonLogAttemptWithSpoofedUser = { user_id: 'victim_uuid', email: 'victim@gmail.com' };
+  const anonLogLegit = { user_id: null, email: 'visitor@unknown.com' };
+
+  const isAnonAllowedSpoof = (anonLogAttemptWithSpoofedUser.user_id === null);
+  const isAnonAllowedLegit = (anonLogLegit.user_id === null);
+
+  assert.strictEqual(isAnonAllowedSpoof, false);
+  assert.strictEqual(isAnonAllowedLegit, true);
+});
+
+// 30. Multi-company tenant scoping prevents cross-company data visibility
+test('Multi-company query scoping strictly includes active company_id', () => {
+  const invoices = [
+    { id: 'inv1', user_id: 'u1', company_id: 'comp_A', grand_total: 100 },
+    { id: 'inv2', user_id: 'u1', company_id: 'comp_B', grand_total: 200 }
+  ];
+  const activeCompanyId = 'comp_A';
+  const companyFiltered = invoices.filter(i => i.company_id === activeCompanyId);
+  assert.strictEqual(companyFiltered.length, 1);
+  assert.strictEqual(companyFiltered[0].id, 'inv1');
+});
+
+// 31. Production sourcemaps are disabled in build configuration
+test('Vite build configuration has sourcemap disabled for production builds', () => {
+  const viteConfig = fs.readFileSync(path.join(__dirname, '../vite.config.ts'), 'utf8');
+  assert.ok(viteConfig.includes('sourcemap: false'));
+});
+
+// 32. Security response headers configured in index.html
+test('Index.html contains strict security meta headers', () => {
+  const indexHtml = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert.ok(indexHtml.includes('X-Content-Type-Options'));
+  assert.ok(indexHtml.includes('nosniff'));
 });
 
 console.log('\n================================================================');

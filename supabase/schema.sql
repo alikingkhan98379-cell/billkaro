@@ -195,7 +195,11 @@ CREATE POLICY "sub_req_update" ON public.subscription_requests FOR UPDATE TO aut
 
 -- Auto-provisioning trigger on auth.users
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 BEGIN
     INSERT INTO public.business_profile (user_id, name, email)
     VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'business_name', 'My Business'), COALESCE(NEW.email, ''))
@@ -208,7 +212,7 @@ BEGIN
     INSERT INTO public.notifications (user_id, title, message, type, is_read)
     VALUES (
         NEW.id, 
-        'Welcome to BillKaro! ??', 
+        'Welcome to BillKaro! 🎉', 
         'Start by completing your Business Profile and adding your Bank / UPI details for instant QR invoices.',
         'welcome', 
         false
@@ -216,7 +220,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -261,8 +265,8 @@ USING (bucket_id = 'signatures' AND (storage.foldername(name))[1] = auth.uid()::
 CREATE POLICY "Users can upload payment proofs" ON storage.objects FOR INSERT TO authenticated
 WITH CHECK (bucket_id = 'payment_proofs' AND (storage.foldername(name))[1] = auth.uid()::text);
 
-CREATE POLICY "Users can view payment proofs" ON storage.objects FOR SELECT TO authenticated
-USING (bucket_id = 'payment_proofs' AND (storage.foldername(name))[1] = auth.uid()::text);
+CREATE POLICY "Users and admins can view payment proofs" ON storage.objects FOR SELECT TO authenticated
+USING (bucket_id = 'payment_proofs' AND ((storage.foldername(name))[1] = auth.uid()::text OR public.is_current_user_admin()));
 
 -- ==============================================================================
 -- 9. GSTIN Lookup Log (Backend Proxy Rate Limiting & Auditing)
@@ -301,7 +305,7 @@ ALTER TABLE public.auth_activity_logs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "aal_select" ON public.auth_activity_logs FOR SELECT TO authenticated USING (auth.uid() = user_id);
 CREATE POLICY "aal_insert" ON public.auth_activity_logs FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "aal_insert_anon" ON public.auth_activity_logs FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "aal_insert_anon" ON public.auth_activity_logs FOR INSERT TO anon WITH CHECK (user_id IS NULL);
 
 -- Ensure strict uniqueness on business profile email (if provided)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_business_profile_email ON public.business_profile (LOWER(email)) WHERE email != '' AND email IS NOT NULL;
@@ -310,7 +314,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_business_profile_email ON public.business_
 -- 11. Check User Auth Status & Server-Side Duplicate Account Prevention
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION public.check_user_auth_status(lookup_email TEXT)
-RETURNS JSON AS $$
+RETURNS JSON 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
     found_user RECORD;
     is_google BOOLEAN := false;
@@ -368,7 +376,7 @@ BEGIN
         END
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 GRANT EXECUTE ON FUNCTION public.check_user_auth_status(TEXT) TO anon, authenticated;
 
@@ -528,7 +536,11 @@ WITH CHECK (public.is_current_user_admin());
 
 -- Trigger 1: Enforce Authoritative Payment Pricing, Plan Immutability & Prevent Unauthorized Status Escalation
 CREATE OR REPLACE FUNCTION public.enforce_payment_integrity()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 BEGIN
     -- 1. Enforce Authoritative Plan Pricing (Database-level Zero Trust)
     IF NEW.plan_id = 'monthly' THEN
@@ -568,7 +580,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS trg_enforce_payment_integrity ON public.payments;
 CREATE TRIGGER trg_enforce_payment_integrity
@@ -577,7 +589,11 @@ CREATE TRIGGER trg_enforce_payment_integrity
 
 -- Trigger 2: Prevent Direct Client Modification of Subscriptions
 CREATE OR REPLACE FUNCTION public.enforce_subscription_integrity()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 BEGIN
     IF TG_OP = 'UPDATE' THEN
         IF NOT public.is_current_user_admin() THEN
@@ -588,7 +604,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 DROP TRIGGER IF EXISTS trg_enforce_subscription_integrity ON public.subscriptions;
 CREATE TRIGGER trg_enforce_subscription_integrity
@@ -597,11 +613,15 @@ CREATE TRIGGER trg_enforce_subscription_integrity
 
 -- Trigger 3: Immutability of Audit Logs (Cannot be altered or deleted)
 CREATE OR REPLACE FUNCTION public.protect_audit_logs()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 BEGIN
     RAISE EXCEPTION 'Payment audit logs are immutable and cannot be modified or deleted.';
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS trg_protect_audit_logs ON public.payment_audit_logs;
 CREATE TRIGGER trg_protect_audit_logs
@@ -613,7 +633,11 @@ CREATE TRIGGER trg_protect_audit_logs
 
 -- 1. Create Payment Order (Authoritative Server-side Price & Duration)
 CREATE OR REPLACE FUNCTION public.create_payment_order(p_plan_id TEXT)
-RETURNS JSONB AS $$
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
     v_user_id UUID := auth.uid();
     v_amount NUMERIC(10,2);
@@ -686,7 +710,7 @@ BEGIN
         'expires_at', v_expires_at
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- 2. Submit Payment Proof (UTR + Transaction Reference + Screenshot)
 CREATE OR REPLACE FUNCTION public.submit_payment_proof(
@@ -695,7 +719,11 @@ CREATE OR REPLACE FUNCTION public.submit_payment_proof(
     p_transaction_reference TEXT DEFAULT NULL,
     p_screenshot_path TEXT DEFAULT NULL
 )
-RETURNS JSONB AS $$
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
     v_user_id UUID := auth.uid();
     v_payment RECORD;
@@ -835,7 +863,7 @@ BEGIN
         'message', v_user_message
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- 3. Admin Approve Payment (Idempotent, Atomic Activation & Subscription Extension)
 CREATE OR REPLACE FUNCTION public.admin_approve_payment(

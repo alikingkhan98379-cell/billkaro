@@ -372,7 +372,242 @@ GRANT EXECUTE ON FUNCTION public.admin_reject_payment(UUID, TEXT, TEXT) TO authe
 GRANT EXECUTE ON FUNCTION public.admin_get_payments(TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_current_user_admin() TO authenticated;
 
--- 9. Realtime publication settings for Subscriptions and Payments
+-- 9. Secure Payment RPCs & Triggers Hardening (search_path fixed)
+CREATE OR REPLACE FUNCTION public.create_payment_order(p_plan_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_amount NUMERIC(10,2);
+    v_order_id TEXT;
+    v_payment_id UUID;
+    v_expires_at TIMESTAMPTZ := now() + INTERVAL '1 hour';
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required to create a payment order.';
+    END IF;
+
+    IF p_plan_id = 'monthly' THEN
+        v_amount := 49.00;
+    ELSIF p_plan_id = 'six_months' THEN
+        v_amount := 250.00;
+    ELSIF p_plan_id = 'yearly' THEN
+        v_amount := 470.00;
+    ELSE
+        RAISE EXCEPTION 'Invalid plan selected: %', p_plan_id;
+    END IF;
+
+    v_order_id := 'BILLKARO-' || to_char(now(), 'YYYYMMDD') || '-' || upper(substring(encode(gen_random_bytes(4), 'hex') from 1 for 8));
+
+    INSERT INTO public.payments (
+        user_id,
+        order_id,
+        plan_id,
+        amount,
+        currency,
+        payment_method,
+        upi_id,
+        payment_note,
+        status,
+        verification_status,
+        expires_at
+    ) VALUES (
+        v_user_id,
+        v_order_id,
+        p_plan_id,
+        v_amount,
+        'INR',
+        'UPI',
+        '9638938258@ybl',
+        'BillKaro',
+        'WAITING_FOR_PAYMENT',
+        'UNVERIFIED',
+        v_expires_at
+    ) RETURNING id INTO v_payment_id;
+
+    INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+    VALUES (
+        v_payment_id, 
+        v_user_id, 
+        'PAYMENT_CREATED', 
+        v_user_id, 
+        jsonb_build_object('order_id', v_order_id, 'plan_id', p_plan_id, 'amount', v_amount)
+    );
+
+    RETURN jsonb_build_object(
+        'payment_id', v_payment_id,
+        'order_id', v_order_id,
+        'plan_id', p_plan_id,
+        'amount', v_amount,
+        'currency', 'INR',
+        'upi_id', '9638938258@ybl',
+        'payment_note', 'BillKaro',
+        'expires_at', v_expires_at
+    );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.submit_payment_proof(
+    p_order_id TEXT, 
+    p_utr TEXT, 
+    p_transaction_reference TEXT DEFAULT NULL,
+    p_screenshot_path TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_payment RECORD;
+    v_clean_utr TEXT;
+    v_clean_txn_ref TEXT;
+    v_verification_status TEXT := 'UNDER_REVIEW';
+    v_user_message TEXT := 'Your payment proof has been submitted successfully and is under review.';
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required.';
+    END IF;
+
+    v_clean_utr := UPPER(TRIM(COALESCE(p_utr, '')));
+    v_clean_txn_ref := UPPER(TRIM(COALESCE(p_transaction_reference, '')));
+    IF v_clean_txn_ref = '' THEN 
+        v_clean_txn_ref := NULL; 
+    END IF;
+
+    IF length(v_clean_utr) < 6 THEN
+        RETURN jsonb_build_object('error', 'Please enter a valid 12-digit UPI / UTR Reference Number.');
+    END IF;
+
+    SELECT * INTO v_payment 
+    FROM public.payments 
+    WHERE order_id = trim(p_order_id) AND user_id = v_user_id;
+
+    IF v_payment.id IS NULL THEN
+        RETURN jsonb_build_object('error', 'Payment order not found.');
+    END IF;
+
+    IF v_payment.status = 'APPROVED' THEN
+        RETURN jsonb_build_object('error', 'This payment order has already been approved and activated.');
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.payments 
+        WHERE LOWER(TRIM(utr)) = LOWER(v_clean_utr) 
+          AND id != v_payment.id 
+          AND status NOT IN ('REJECTED', 'EXPIRED')
+    ) THEN
+        INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+        VALUES (
+            v_payment.id, 
+            v_user_id, 
+            'DUPLICATE_UTR_ATTEMPT', 
+            v_user_id, 
+            jsonb_build_object('order_id', v_payment.order_id, 'utr', v_clean_utr)
+        );
+        RETURN jsonb_build_object('error', 'This transaction reference has already been submitted.');
+    END IF;
+
+    IF v_clean_txn_ref IS NOT NULL AND EXISTS (
+        SELECT 1 FROM public.payments 
+        WHERE LOWER(TRIM(transaction_reference)) = LOWER(v_clean_txn_ref) 
+          AND id != v_payment.id 
+          AND status NOT IN ('REJECTED', 'EXPIRED')
+    ) THEN
+        INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+        VALUES (
+            v_payment.id, 
+            v_user_id, 
+            'DUPLICATE_TRANSACTION_ATTEMPT', 
+            v_user_id, 
+            jsonb_build_object('order_id', v_payment.order_id, 'transaction_reference', v_clean_txn_ref)
+        );
+        RETURN jsonb_build_object('error', 'This transaction reference has already been submitted.');
+    END IF;
+
+    IF v_clean_txn_ref IS NOT NULL AND v_clean_utr = v_clean_txn_ref THEN
+        v_verification_status := 'SUSPICIOUS';
+        v_user_message := 'Your payment details require additional verification.';
+
+        INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+        VALUES (
+            v_payment.id, 
+            v_user_id, 
+            'UTR_TRANSACTION_MATCH', 
+            v_user_id, 
+            jsonb_build_object(
+                'order_id', v_payment.order_id, 
+                'utr', v_clean_utr, 
+                'transaction_reference', v_clean_txn_ref,
+                'note', 'UTR and Transaction ID are identical'
+            )
+        );
+    ELSE
+        v_verification_status := 'UNDER_REVIEW';
+        v_user_message := 'Your payment proof has been submitted successfully and is under review.';
+    END IF;
+
+    UPDATE public.payments SET
+        utr = v_clean_utr,
+        transaction_reference = v_clean_txn_ref,
+        screenshot_path = COALESCE(p_screenshot_path, v_payment.screenshot_path),
+        status = 'PENDING_ADMIN',
+        verification_status = v_verification_status,
+        submitted_at = now(),
+        updated_at = now()
+    WHERE id = v_payment.id;
+
+    INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+    VALUES (
+        v_payment.id, 
+        v_user_id, 
+        'PAYMENT_SUBMITTED', 
+        v_user_id, 
+        jsonb_build_object(
+            'order_id', v_payment.order_id, 
+            'utr', v_clean_utr, 
+            'transaction_reference', v_clean_txn_ref,
+            'verification_status', v_verification_status
+        )
+    );
+
+    INSERT INTO public.notifications (user_id, title, message, type, is_read)
+    VALUES (
+        v_user_id,
+        'Payment Under Verification ⏳',
+        'We received your payment details for Order #' || v_payment.order_id || '. Verification takes a maximum of 4 hours.',
+        'payment',
+        false
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'order_id', v_payment.order_id,
+        'status', 'PENDING_ADMIN',
+        'verification_status', v_verification_status,
+        'message', v_user_message
+    );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.create_payment_order(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_payment_proof(TEXT, TEXT, TEXT, TEXT) TO authenticated;
+
+-- 10. Storage RLS Policy (Admin & Owner Inspection)
+DROP POLICY IF EXISTS "Users can view payment proofs" ON storage.objects;
+DROP POLICY IF EXISTS "Users and admins can view payment proofs" ON storage.objects;
+CREATE POLICY "Users and admins can view payment proofs" ON storage.objects FOR SELECT TO authenticated
+USING (bucket_id = 'payment_proofs' AND ((storage.foldername(name))[1] = auth.uid()::text OR public.is_current_user_admin()));
+
+-- 11. Auth Activity Logs RLS Policy Tightening (Prevent spoofed log inserts)
+DROP POLICY IF EXISTS "aal_insert_anon" ON public.auth_activity_logs;
+CREATE POLICY "aal_insert_anon" ON public.auth_activity_logs FOR INSERT TO anon WITH CHECK (user_id IS NULL);
+
+-- 12. Realtime publication settings for Subscriptions, Payments & Notifications
 DO $$
 BEGIN
     BEGIN
@@ -392,6 +627,6 @@ BEGIN
     END;
 END $$;
 
--- 10. Reload PostgREST Schema Cache
+-- 13. Reload PostgREST Schema Cache
 NOTIFY pgrst, 'reload schema';
 
