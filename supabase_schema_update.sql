@@ -1,5 +1,5 @@
 -- =========================================================================
--- 🏢 BillKaro Comprehensive Database Schema & Payment Sync Update
+-- 🏢 BillKaro Zero-Trust Security & Admin Authorization Migration
 -- Run this in your Supabase Dashboard -> SQL Editor
 -- =========================================================================
 
@@ -41,12 +41,46 @@ ALTER TABLE IF EXISTS public.notifications DROP CONSTRAINT IF EXISTS notificatio
 ALTER TABLE IF EXISTS public.notifications ADD CONSTRAINT notifications_type_check 
     CHECK (type IN ('payment', 'PAYMENT_APPROVED', 'invoice_created', 'invoice_overdue', 'welcome', 'system', 'security'));
 
--- 4. Authoritative Admin Approve Payment Function (Atomic + Expiry Extension + In-App Notification)
+-- 4. Authoritative Server-Side Admin Role Function
+CREATE OR REPLACE FUNCTION public.is_current_user_admin()
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+    v_role TEXT;
+    v_email TEXT;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RETURN false;
+    END IF;
+
+    SELECT 
+        COALESCE(raw_app_meta_data->>'role', ''),
+        COALESCE(email, '')
+    INTO v_role, v_email
+    FROM auth.users
+    WHERE id = auth.uid();
+
+    IF v_role = 'admin' OR LOWER(v_email) IN ('smartgstbill@gmail.com', 'admin@billkaro.com') THEN
+        RETURN true;
+    END IF;
+
+    RETURN false;
+END;
+$$;
+
+-- 5. Authoritative Admin Approve Payment Function (Atomic + Expiry Extension + In-App Notification)
 CREATE OR REPLACE FUNCTION public.admin_approve_payment(
     p_payment_id UUID, 
     p_admin_note TEXT DEFAULT NULL
 )
-RETURNS JSONB AS $$
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
     v_admin_id UUID := auth.uid();
     v_payment RECORD;
@@ -56,9 +90,9 @@ DECLARE
     v_start_date TIMESTAMPTZ := now();
     v_plan_title TEXT;
 BEGIN
-    -- Security: Validate Admin Privileges
+    -- Security: Authoritative Server-Side Admin Validation
     IF NOT public.is_current_user_admin() THEN
-        RAISE EXCEPTION 'Unauthorized. Only administrators can approve payments.';
+        RAISE EXCEPTION 'Unauthorized: Administrator privileges required.';
     END IF;
 
     -- Lock payment record
@@ -183,12 +217,162 @@ BEGIN
         'expiry_date', v_new_expiry
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
+
+-- 6. Authoritative Admin Reject Payment Function
+CREATE OR REPLACE FUNCTION public.admin_reject_payment(
+    p_payment_id UUID, 
+    p_reason TEXT, 
+    p_admin_note TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+DECLARE
+    v_admin_id UUID := auth.uid();
+    v_payment RECORD;
+BEGIN
+    -- Security: Authoritative Server-Side Admin Validation
+    IF NOT public.is_current_user_admin() THEN
+        RAISE EXCEPTION 'Unauthorized: Administrator privileges required.';
+    END IF;
+
+    SELECT * INTO v_payment 
+    FROM public.payments 
+    WHERE id = p_payment_id;
+
+    IF v_payment.id IS NULL THEN
+        RETURN jsonb_build_object('error', 'Payment record not found.');
+    END IF;
+
+    UPDATE public.payments SET
+        status = 'REJECTED',
+        verification_status = 'REJECTED',
+        rejected_at = now(),
+        verification_message = COALESCE(p_reason, 'Payment could not be verified in the bank account.'),
+        admin_notes = COALESCE(p_admin_note, admin_notes),
+        updated_at = now()
+    WHERE id = p_payment_id;
+
+    -- Audit log
+    INSERT INTO public.payment_audit_logs (payment_id, user_id, action, performed_by, metadata)
+    VALUES (
+        p_payment_id,
+        v_payment.user_id,
+        'PAYMENT_REJECTED',
+        v_admin_id,
+        jsonb_build_object('order_id', v_payment.order_id, 'reason', p_reason, 'admin_notes', p_admin_note)
+    );
+
+    -- In-app notification
+    INSERT INTO public.notifications (user_id, title, message, type, is_read)
+    VALUES (
+        v_payment.user_id,
+        'Payment Verification Notice',
+        'Payment for Order #' || v_payment.order_id || ' could not be verified. Reason: ' || COALESCE(p_reason, 'Transaction not found in bank account.'),
+        'payment',
+        false
+    );
+
+    RETURN jsonb_build_object('success', true, 'message', 'Payment rejected.');
+END;
+$$;
+
+-- 7. Authoritative Admin Get All Payments Function
+CREATE OR REPLACE FUNCTION public.admin_get_payments(
+    p_search TEXT DEFAULT NULL,
+    p_status TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+    id UUID,
+    user_id UUID,
+    order_id TEXT,
+    plan_id TEXT,
+    amount NUMERIC,
+    currency TEXT,
+    payment_method TEXT,
+    upi_id TEXT,
+    payment_note TEXT,
+    utr TEXT,
+    transaction_reference TEXT,
+    screenshot_path TEXT,
+    status TEXT,
+    verification_status TEXT,
+    verification_message TEXT,
+    admin_notes TEXT,
+    created_at TIMESTAMPTZ,
+    submitted_at TIMESTAMPTZ,
+    approved_at TIMESTAMPTZ,
+    rejected_at TIMESTAMPTZ,
+    user_email TEXT,
+    user_name TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
+BEGIN
+    -- Security: Authoritative Server-Side Admin Validation
+    IF NOT public.is_current_user_admin() THEN
+        RAISE EXCEPTION 'Unauthorized: Administrator privileges required.';
+    END IF;
+
+    RETURN QUERY
+    SELECT 
+        p.id,
+        p.user_id,
+        p.order_id,
+        p.plan_id,
+        p.amount,
+        p.currency,
+        p.payment_method,
+        p.upi_id,
+        p.payment_note,
+        p.utr,
+        p.transaction_reference,
+        p.screenshot_path,
+        p.status,
+        p.verification_status,
+        p.verification_message,
+        p.admin_notes,
+        p.created_at,
+        p.submitted_at,
+        p.approved_at,
+        p.rejected_at,
+        COALESCE(u.email, bp.email, '') as user_email,
+        COALESCE(bp.name, bp.full_name, 'Business User') as user_name
+    FROM public.payments p
+    LEFT JOIN auth.users u ON u.id = p.user_id
+    LEFT JOIN public.business_profile bp ON bp.user_id = p.user_id
+    WHERE 
+        (p_status IS NULL OR p_status = 'ALL' OR p.status = p_status)
+        AND (
+            p_search IS NULL OR p_search = '' 
+            OR p.utr ILIKE '%' || p_search || '%'
+            OR p.transaction_reference ILIKE '%' || p_search || '%'
+            OR p.order_id ILIKE '%' || p_search || '%'
+            OR u.email ILIKE '%' || p_search || '%'
+            OR bp.name ILIKE '%' || p_search || '%'
+        )
+    ORDER BY p.created_at DESC;
+END;
+$$;
+
+-- 8. Revoke all default execution permissions from PUBLIC & anon
+REVOKE ALL ON FUNCTION public.admin_approve_payment(UUID, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.admin_reject_payment(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.admin_get_payments(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.is_current_user_admin() FROM PUBLIC, anon;
 
 -- Grant execution to authenticated users (role checked inside function)
 GRANT EXECUTE ON FUNCTION public.admin_approve_payment(UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_reject_payment(UUID, TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_get_payments(TEXT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_current_user_admin() TO authenticated;
 
--- 5. Realtime publication settings for Subscriptions and Payments
+-- 9. Realtime publication settings for Subscriptions and Payments
 DO $$
 BEGIN
     BEGIN
@@ -208,5 +392,6 @@ BEGIN
     END;
 END $$;
 
--- 6. Reload PostgREST Schema Cache
+-- 10. Reload PostgREST Schema Cache
 NOTIFY pgrst, 'reload schema';
+

@@ -454,9 +454,13 @@ END $$;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Helper to check if current user is Admin
+-- Helper to check if current user is Admin (Authoritative Server Check)
 CREATE OR REPLACE FUNCTION public.is_current_user_admin()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
     v_role TEXT;
     v_email TEXT;
@@ -478,7 +482,7 @@ BEGIN
 
     RETURN false;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Payments RLS Policies (Zero Trust: Strict Scoping)
 DROP POLICY IF EXISTS "payments_select" ON public.payments;
@@ -838,7 +842,11 @@ CREATE OR REPLACE FUNCTION public.admin_approve_payment(
     p_payment_id UUID, 
     p_admin_note TEXT DEFAULT NULL
 )
-RETURNS JSONB AS $$
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
     v_admin_id UUID := auth.uid();
     v_payment RECORD;
@@ -847,9 +855,9 @@ DECLARE
     v_new_expiry TIMESTAMPTZ;
     v_start_date TIMESTAMPTZ := now();
 BEGIN
-    -- Security: Validate Admin Privileges
+    -- Security: Authoritative Server-Side Admin Validation
     IF NOT public.is_current_user_admin() THEN
-        RAISE EXCEPTION 'Unauthorized. Only administrators can approve payments.';
+        RAISE EXCEPTION 'Unauthorized: Administrator privileges required.';
     END IF;
 
     -- Lock payment record
@@ -974,7 +982,7 @@ BEGIN
         'expiry_date', v_new_expiry
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- 4. Admin Reject Payment
 CREATE OR REPLACE FUNCTION public.admin_reject_payment(
@@ -982,13 +990,18 @@ CREATE OR REPLACE FUNCTION public.admin_reject_payment(
     p_reason TEXT, 
     p_admin_note TEXT DEFAULT NULL
 )
-RETURNS JSONB AS $$
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 DECLARE
     v_admin_id UUID := auth.uid();
     v_payment RECORD;
 BEGIN
+    -- Security: Authoritative Server-Side Admin Validation
     IF NOT public.is_current_user_admin() THEN
-        RAISE EXCEPTION 'Unauthorized.';
+        RAISE EXCEPTION 'Unauthorized: Administrator privileges required.';
     END IF;
 
     SELECT * INTO v_payment 
@@ -1030,7 +1043,7 @@ BEGIN
 
     RETURN jsonb_build_object('success', true, 'message', 'Payment rejected.');
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- 5. Admin Get All Payments (Search by UTR, Transaction ID, Order ID, Email, Status)
 CREATE OR REPLACE FUNCTION public.admin_get_payments(
@@ -1060,10 +1073,15 @@ RETURNS TABLE (
     rejected_at TIMESTAMPTZ,
     user_email TEXT,
     user_name TEXT
-) AS $$
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
+AS $$
 BEGIN
+    -- Security: Authoritative Server-Side Admin Validation
     IF NOT public.is_current_user_admin() THEN
-        RAISE EXCEPTION 'Unauthorized.';
+        RAISE EXCEPTION 'Unauthorized: Administrator privileges required.';
     END IF;
 
     RETURN QUERY
@@ -1105,8 +1123,15 @@ BEGIN
         )
     ORDER BY p.created_at DESC;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
+-- Revoke all default execution permissions from PUBLIC & anon
+REVOKE ALL ON FUNCTION public.admin_approve_payment(UUID, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.admin_reject_payment(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.admin_get_payments(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.is_current_user_admin() FROM PUBLIC, anon;
+
+-- Grant EXECUTE only to authenticated users (role authorization checked inside each function)
 GRANT EXECUTE ON FUNCTION public.create_payment_order(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_payment_proof(TEXT, TEXT, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_approve_payment(UUID, TEXT) TO authenticated;

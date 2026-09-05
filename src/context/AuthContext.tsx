@@ -971,8 +971,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 4. Admin Get All Payments
+  // 4. Admin Get All Payments (Strictly Server-Authorized)
   const adminGetPayments = async (search?: string, status?: string): Promise<PaymentRecord[]> => {
+    if (!isAdmin) {
+      return [];
+    }
     try {
       const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_get_payments', {
         p_search: search || null,
@@ -982,17 +985,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!rpcErr && rpcData) {
         return rpcData as PaymentRecord[];
       }
-
-      // Fallback query
-      let query = supabase.from('payments').select('*').order('created_at', { ascending: false });
-      if (status && status !== 'ALL') {
-        query = query.eq('status', status);
-      }
-      if (search && search.trim()) {
-        query = query.or(`utr.ilike.%${search}%,order_id.ilike.%${search}%`);
-      }
-      const { data } = await query;
-      return (data as PaymentRecord[]) || [];
+      return [];
     } catch (e) {
       return [];
     }
@@ -1003,6 +996,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     paymentId: string, 
     adminNote?: string
   ): Promise<{ success?: boolean; error?: string; message?: string }> => {
+    if (!isAdmin) {
+      return { error: 'Unauthorized: Administrator privileges required.' };
+    }
     try {
       const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_approve_payment', {
         p_payment_id: paymentId,
@@ -1101,6 +1097,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     reason: string, 
     adminNote?: string
   ): Promise<{ success?: boolean; error?: string; message?: string }> => {
+    if (!isAdmin) {
+      return { error: 'Unauthorized: Administrator privileges required.' };
+    }
     try {
       const { data: rpcData, error: rpcErr } = await supabase.rpc('admin_reject_payment', {
         p_payment_id: paymentId,

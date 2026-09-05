@@ -18,7 +18,7 @@ import { PaymentRecord } from '../types';
 import { getPaymentProofSignedUrl } from '../utils/storage';
 
 export const AdminPaymentsPage: React.FC = () => {
-  const { adminGetPayments, adminApprovePayment, adminRejectPayment } = useAuth();
+  const { isAdmin, adminGetPayments, adminApprovePayment, adminRejectPayment } = useAuth();
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -38,6 +38,11 @@ export const AdminPaymentsPage: React.FC = () => {
   const [copiedUtr, setCopiedUtr] = useState<string | null>(null);
 
   const loadPayments = async () => {
+    if (!isAdmin) {
+      setPayments([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await adminGetPayments(searchQuery, statusFilter);
@@ -50,8 +55,14 @@ export const AdminPaymentsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadPayments();
-  }, [statusFilter]);
+    if (isAdmin) {
+      loadPayments();
+    }
+  }, [statusFilter, isAdmin]);
+
+  if (!isAdmin) {
+    return null;
+  }
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
