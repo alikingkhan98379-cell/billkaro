@@ -6,6 +6,7 @@ import { PLANS_CONFIG, PlanId } from '../config/plans';
 interface CompanyContextType {
   companies: Company[];
   activeCompany: Company | null;
+  activeCompanyId: string;
   loading: boolean;
   maxCompanies: number;
   currentCount: number;
@@ -15,6 +16,8 @@ interface CompanyContextType {
   updateCompany: (companyId: string, updates: Partial<Company>) => Promise<{ success?: boolean; error?: string }>;
   deleteCompany: (companyId: string) => Promise<{ success?: boolean; error?: string }>;
   refreshCompanies: () => Promise<void>;
+  isItemForActiveCompany: (item: { company_id?: string | null }) => boolean;
+  resolveCompany: (companyId?: string | null) => Company | undefined;
 }
 
 const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
@@ -249,11 +252,31 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return { success: true };
   };
 
+  // Helper to determine if an invoice, customer, or product belongs to currently active company
+  // Safely attributes legacy items without company_id to the primary/first company
+  const isItemForActiveCompany = useCallback((item: { company_id?: string | null }) => {
+    const primaryId = companies.length > 0 ? companies[0].id : '';
+    const currentId = activeCompany?.id || activeCompanyId || primaryId;
+    if (!item) return false;
+    if (item.company_id) {
+      return item.company_id === currentId;
+    }
+    // Legacy fallback: items with no company_id belong to the primary company
+    return currentId === primaryId;
+  }, [activeCompany, activeCompanyId, companies]);
+
+  // Helper to resolve company details by ID
+  const resolveCompany = useCallback((companyId?: string | null) => {
+    if (!companyId) return companies[0];
+    return companies.find(c => c.id === companyId) || companies[0];
+  }, [companies]);
+
   return (
     <CompanyContext.Provider
       value={{
         companies,
         activeCompany,
+        activeCompanyId: activeCompany?.id || activeCompanyId || (companies[0]?.id || ''),
         loading,
         maxCompanies,
         currentCount,
@@ -262,7 +285,9 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         addCompany,
         updateCompany,
         deleteCompany,
-        refreshCompanies: async () => loadCompanies()
+        refreshCompanies: async () => loadCompanies(),
+        isItemForActiveCompany,
+        resolveCompany
       }}
     >
       {children}

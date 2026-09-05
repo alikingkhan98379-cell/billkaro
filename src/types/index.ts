@@ -53,9 +53,22 @@ export interface CompanyLimitInfo {
   planId: string;
 }
 
+export interface CompanySummaryStats {
+  company_id: string;
+  company_name: string;
+  gstin?: string;
+  is_active: boolean;
+  invoices_count: number;
+  customers_count: number;
+  total_billed: number;
+  total_paid: number;
+  total_pending: number;
+}
+
 export interface Customer {
   id: string;
   user_id: string;
+  company_id?: string;
   name: string;
   address: string;
   phone: string;
@@ -69,6 +82,7 @@ export interface Customer {
 export interface Product {
   id: string;
   user_id: string;
+  company_id?: string;
   name: string;
   hsn_code: string;
   price: number;
@@ -95,6 +109,7 @@ export interface InvoiceItem {
 export interface Invoice {
   id: string;
   user_id: string;
+  company_id?: string;
   customer_id?: string | null;
   invoice_number: string;
   invoice_date: string;

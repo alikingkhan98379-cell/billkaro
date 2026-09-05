@@ -9,6 +9,7 @@ import {
   AlertCircle 
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useCompany } from '../context/CompanyContext';
 import { supabase } from '../lib/supabase';
 import { Product } from '../types';
 import { formatINR } from '../utils/currency';
@@ -17,9 +18,11 @@ import { isValidHSN } from '../utils/validators';
 
 export const ProductsPage: React.FC = () => {
   const { user } = useAuth();
+  const { activeCompany, activeCompanyId, companies, isItemForActiveCompany, resolveCompany } = useCompany();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [viewFilter, setViewFilter] = useState<'active' | 'all'>('active');
 
   // Modal State
   const [modalOpen, setModalOpen] = useState<boolean>(false);
@@ -125,10 +128,14 @@ export const ProductsPage: React.FC = () => {
           setModalOpen(false);
         }
       } else {
+        const primaryId = companies.length > 0 ? companies[0].id : null;
+        const currentId = activeCompany?.id || activeCompanyId || primaryId;
+
         const { data, error } = await supabase
           .from('products')
           .insert({
             user_id: user.id,
+            company_id: currentId,
             name: name.trim(),
             hsn_code: hsnCode.trim(),
             price: numPrice,
@@ -169,6 +176,9 @@ export const ProductsPage: React.FC = () => {
   };
 
   const filteredProducts = products.filter(p => {
+    if (viewFilter === 'active' && !isItemForActiveCompany(p)) {
+      return false;
+    }
     const q = searchQuery.toLowerCase();
     return (
       p.name.toLowerCase().includes(q) ||
@@ -185,7 +195,7 @@ export const ProductsPage: React.FC = () => {
             Products & Items Master
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Store inventory items, HSN codes, default rates, and GST tax slabs
+            Store inventory items, HSN codes, default rates, and GST tax slabs for <strong className="text-blue-600 dark:text-blue-400">{activeCompany?.name || 'your business'}</strong>
           </p>
         </div>
         <button
@@ -196,6 +206,40 @@ export const ProductsPage: React.FC = () => {
           <span>Add New Item</span>
         </button>
       </div>
+
+      {/* View Filter Pill Bar (When multiple companies exist) */}
+      {companies.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-200/70 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Filtering:</span>
+            <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 text-xs font-black">
+              {viewFilter === 'active' ? (activeCompany?.name || 'Active Business') : 'All Businesses Combined'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setViewFilter('active')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer min-h-[32px] ${
+                viewFilter === 'active'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              {activeCompany?.name || 'Active Business'} Only
+            </button>
+            <button
+              onClick={() => setViewFilter('all')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer min-h-[32px] ${
+                viewFilter === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              All Businesses ({products.length})
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Catalog Search & List */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-4 sm:p-6 space-y-4 transition-colors">
@@ -250,7 +294,14 @@ export const ProductsPage: React.FC = () => {
                 {filteredProducts.map(p => (
                   <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
                     <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white">
-                      {p.name}
+                      <div className="flex items-center gap-2">
+                        <span>{p.name}</span>
+                        {companies.length > 1 && (
+                          <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200/50">
+                            {resolveCompany(p.company_id)?.name || 'Primary'}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400">
                       {p.hsn_code || '-'}

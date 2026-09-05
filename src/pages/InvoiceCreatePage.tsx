@@ -45,7 +45,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
   onInvoiceCreated
 }) => {
   const { user, businessProfile, subscription } = useAuth();
-  const { activeCompany } = useCompany();
+  const { activeCompany, activeCompanyId, companies, isItemForActiveCompany } = useCompany();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -113,7 +113,8 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           .eq('user_id', user.id)
           .order('name');
         if (!custErr && custData) {
-          setCustomers(custData);
+          const compCusts = custData.filter(c => isItemForActiveCompany(c));
+          setCustomers(compCusts);
         }
 
         const { data: prodData } = await supabase
@@ -121,15 +122,19 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           .select('*')
           .eq('user_id', user.id)
           .order('name');
-        if (prodData) setProducts(prodData);
+        if (prodData) {
+          const compProds = prodData.filter(p => isItemForActiveCompany(p));
+          setProducts(compProds);
+        }
 
         const { data: invList } = await supabase
           .from('invoices')
-          .select('invoice_number, invoice_date, created_at')
+          .select('invoice_number, invoice_date, created_at, company_id')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
 
         if (invList && invList.length > 0) {
+          const compInvs = invList.filter(inv => isItemForActiveCompany(inv));
           const currentMonth = new Date().getMonth();
           const currentYear = new Date().getFullYear();
           const thisMonthInvoices = invList.filter(inv => {
@@ -141,7 +146,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             setUpgradeModalOpen(true);
           }
 
-          const count = invList.length + 1;
+          const count = compInvs.length + 1;
           const nextSeq = 'INV-' + count.toString().padStart(4, '0');
           setInvoiceNumber(nextSeq);
         } else {
@@ -155,7 +160,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
     };
 
     loadData();
-  }, [user, subscription]);
+  }, [user, subscription, activeCompany, activeCompanyId]);
 
   // Unsaved changes protection
   useEffect(() => {
@@ -453,6 +458,8 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
       if (user) {
         const { data: sessionData } = await supabase.auth.getSession();
         const currentUserId = sessionData?.session?.user?.id || user.id;
+        const primaryId = companies.length > 0 ? companies[0].id : null;
+        const currentCompanyId = activeCompany?.id || activeCompanyId || primaryId;
 
         let finalCustomerId = selectedCustomerId && !selectedCustomerId.startsWith('temp_') ? selectedCustomerId : null;
         if (saveToDirectory && customerName.trim() && customerName !== 'Cash Customer' && !finalCustomerId) {
@@ -461,6 +468,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
               .from('customers')
               .insert({
                 user_id: currentUserId,
+                company_id: currentCompanyId,
                 name: customerName.trim(),
                 phone: customerPhone.trim(),
                 email: customerEmail.trim(),
@@ -484,6 +492,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           .from('invoices')
           .insert({
             user_id: currentUserId,
+            company_id: currentCompanyId,
             customer_id: finalCustomerId,
             invoice_number: invoiceNumber.trim(),
             invoice_date: invoiceDate,

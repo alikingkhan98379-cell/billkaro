@@ -29,6 +29,7 @@ import { Badge } from '../components/common/Badge';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { shareInvoicePDF } from '../utils/shareService';
 import { CompanySwitcher } from '../components/common/CompanySwitcher';
+import { Customer, Product, CompanySummaryStats } from '../types';
 
 interface DashboardPageProps {
   setCurrentTab: (tab: any) => void;
@@ -37,16 +38,17 @@ interface DashboardPageProps {
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) => {
   const { user, businessProfile, isPremium, planId } = useAuth();
-  const { activeCompany, companies, currentCount, maxCompanies } = useCompany();
+  const { activeCompany, companies, currentCount, maxCompanies, isItemForActiveCompany, switchCompany } = useCompany();
 
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [customersCount, setCustomersCount] = useState<number>(0);
-  const [productsCount, setProductsCount] = useState<number>(0);
+  const [rawInvoices, setRawInvoices] = useState<Invoice[]>([]);
+  const [rawCustomers, setRawCustomers] = useState<Customer[]>([]);
+  const [rawProducts, setRawProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [dismissedOnboarding, setDismissedOnboarding] = useState<boolean>(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'active' | 'all'>('active');
 
   const fetchDashboardData = async () => {
     if (!user) return;
@@ -63,21 +65,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (invData) setInvoices(invData);
+      if (invData) setRawInvoices(invData);
 
-      // 2. Fetch Customers Count
-      const { count: cCount } = await supabase
+      // 2. Fetch Customers
+      const { data: custData } = await supabase
         .from('customers')
-        .select('*', { count: 'exact', head: true })
+        .select('*')
         .eq('user_id', user.id);
-      setCustomersCount(cCount || 0);
+      if (custData) setRawCustomers(custData);
 
-      // 3. Fetch Products Count
-      const { count: pCount } = await supabase
+      // 3. Fetch Products
+      const { data: prodData } = await supabase
         .from('products')
-        .select('*', { count: 'exact', head: true })
+        .select('*')
         .eq('user_id', user.id);
-      setProductsCount(pCount || 0);
+      if (prodData) setRawProducts(prodData);
     } catch (err) {
       console.error('Error loading dashboard:', err);
     } finally {
@@ -89,7 +91,55 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
     fetchDashboardData();
   }, [user]);
 
-  // Calculations
+  // Scoped datasets based on active company or all companies view
+  const primaryCompanyId = companies.length > 0 ? companies[0].id : '';
+  const currentCompanyId = activeCompany?.id || primaryCompanyId;
+
+  const invoices = viewMode === 'all'
+    ? rawInvoices
+    : rawInvoices.filter(inv => isItemForActiveCompany(inv));
+
+  const customers = viewMode === 'all'
+    ? rawCustomers
+    : rawCustomers.filter(c => isItemForActiveCompany(c));
+
+  const products = viewMode === 'all'
+    ? rawProducts
+    : rawProducts.filter(p => isItemForActiveCompany(p));
+
+  const customersCount = customers.length;
+  const productsCount = products.length;
+
+  // Multi-Company Matrix Summary Stats
+  const companiesSummary: CompanySummaryStats[] = companies.map(comp => {
+    const compInvoices = rawInvoices.filter(inv => 
+      inv.company_id ? inv.company_id === comp.id : comp.id === primaryCompanyId
+    );
+    const compCustomers = rawCustomers.filter(c =>
+      c.company_id ? c.company_id === comp.id : comp.id === primaryCompanyId
+    );
+    const totalBilled = compInvoices.reduce((acc, inv) => acc + (Number(inv.grand_total) || 0), 0);
+    const totalPaid = compInvoices
+      .filter(inv => inv.status === 'PAID')
+      .reduce((acc, inv) => acc + (Number(inv.grand_total) || 0), 0);
+    const totalPending = compInvoices
+      .filter(inv => inv.status !== 'PAID')
+      .reduce((acc, inv) => acc + (Number(inv.grand_total) || 0), 0);
+
+    return {
+      company_id: comp.id,
+      company_name: comp.name,
+      gstin: comp.gstin,
+      is_active: comp.id === currentCompanyId,
+      invoices_count: compInvoices.length,
+      customers_count: compCustomers.length,
+      total_billed: totalBilled,
+      total_paid: totalPaid,
+      total_pending: totalPending
+    };
+  });
+
+  // Active Company / View Calculations
   const totalBilled = invoices.reduce((acc, inv) => acc + (Number(inv.grand_total) || 0), 0);
   const totalPaid = invoices
     .filter(inv => inv.status === 'PAID')
@@ -105,7 +155,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
   // Free Tier Monthly Limit Check (5 invoices per calendar month)
   const currentMonth = new Date().getMonth();
   const currentYear = new Date().getFullYear();
-  const currentMonthInvoices = invoices.filter(inv => {
+  const currentMonthInvoices = rawInvoices.filter(inv => {
     const d = new Date(inv.invoice_date || inv.created_at || '');
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
@@ -174,7 +224,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         .update({ status: newStatus })
         .eq('id', invId);
 
-      setInvoices(prev =>
+      setRawInvoices(prev =>
         prev.map(i => (i.id === invId ? { ...i, status: newStatus } : i))
       );
     } catch (e) {
@@ -285,7 +335,143 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         </div>
       )}
 
-      {/* 2. QUICK ACTIONS BAR */}
+      {/* 2. VIEW MODE TOGGLE & COMPANY DATA SCOPE BAR */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-200/70 dark:border-slate-800">
+        <div className="flex items-center gap-2">
+          <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+            Showing Data For:
+          </span>
+          <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 text-xs font-black">
+            {viewMode === 'all' ? 'All Businesses Combined' : (activeCompany?.name || 'Primary Business')}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 self-start sm:self-auto">
+          <button
+            onClick={() => setViewMode('active')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer min-h-[36px] flex items-center gap-1.5 ${
+              viewMode === 'active'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <span>Active Business Only</span>
+          </button>
+          <button
+            onClick={() => setViewMode('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer min-h-[36px] flex items-center gap-1.5 ${
+              viewMode === 'all'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+            }`}
+          >
+            <span>All Businesses ({companies.length})</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 3. MULTI-BUSINESS SUMMARY MATRIX (If multiple businesses exist or when All view is enabled) */}
+      {companies.length > 1 && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-5 sm:p-6 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">All Businesses Overview</h3>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold border border-indigo-200 dark:border-indigo-800">
+                  {companies.length} Firms Active
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Company-wise clients, invoice volume, billed sales, and pending recovery dues
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="pb-3 pl-2">Business Name</th>
+                  <th className="pb-3 text-center">Clients</th>
+                  <th className="pb-3 text-center">Invoices</th>
+                  <th className="pb-3">Total Billed</th>
+                  <th className="pb-3">Collected (Paid)</th>
+                  <th className="pb-3">Pending Udhaar</th>
+                  <th className="pb-3 text-right pr-2">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {companiesSummary.map(c => (
+                  <tr 
+                    key={c.company_id} 
+                    className={`transition ${c.is_active ? 'bg-blue-50/50 dark:bg-blue-950/20' : 'hover:bg-slate-50/70 dark:hover:bg-slate-800/50'}`}
+                  >
+                    <td className="py-3 pl-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.is_active ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <span>{c.company_name}</span>
+                            {c.is_active && (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[9px] font-bold">
+                                Current
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {c.gstin ? `GST: ${c.gstin}` : 'Unregistered GST'}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-3 text-center font-semibold text-slate-700 dark:text-slate-300">
+                      {c.customers_count}
+                    </td>
+                    <td className="py-3 text-center font-semibold text-slate-700 dark:text-slate-300">
+                      {c.invoices_count}
+                    </td>
+                    <td className="py-3 font-bold text-slate-900 dark:text-white">
+                      {formatINR(c.total_billed)}
+                    </td>
+                    <td className="py-3 font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatINR(c.total_paid)}
+                    </td>
+                    <td className="py-3">
+                      <span className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                        c.total_pending > 0
+                          ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                      }`}>
+                        {formatINR(c.total_pending)}
+                      </span>
+                    </td>
+                    <td className="py-3 text-right pr-2">
+                      {c.is_active ? (
+                        <span className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg text-[10px] font-bold">
+                          Active
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            switchCompany(c.company_id);
+                            setViewMode('active');
+                          }}
+                          className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-lg text-[10px] font-bold transition cursor-pointer min-h-[30px]"
+                        >
+                          Switch
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 4. QUICK ACTIONS BAR */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => setCurrentTab('create-invoice')}
@@ -309,7 +495,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
           </div>
           <div>
             <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Customers ({customersCount})</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">Manage client directory</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+              {viewMode === 'all' ? 'All Businesses' : (activeCompany?.name || 'Active Business')}
+            </div>
           </div>
         </button>
 
@@ -322,7 +510,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
           </div>
           <div>
             <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Products ({productsCount})</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">Item catalog & rates</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+              {viewMode === 'all' ? 'All Businesses' : (activeCompany?.name || 'Active Business')}
+            </div>
           </div>
         </button>
 
@@ -334,18 +524,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
             <FileText className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">All Invoices ({invoices.length})</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">View & download history</div>
+            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Invoices ({invoices.length})</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+              {viewMode === 'all' ? 'All Businesses' : (activeCompany?.name || 'Active Business')}
+            </div>
           </div>
         </button>
       </div>
 
-      {/* 3. BUSINESS METRICS GRID */}
+      {/* 5. BUSINESS METRICS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         {/* Metric 1 */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Total Sales</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">
+              Total Sales {viewMode === 'all' ? '(All)' : `(${activeCompany?.name || 'Active'})`}
+            </span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
             </div>
@@ -377,7 +571,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         {/* Metric 3 */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Pending Dues</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider">Pending Udhaar</span>
             <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center">
               <Clock className="w-4 h-4" />
             </div>

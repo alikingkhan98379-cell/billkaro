@@ -11,8 +11,9 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useCompany } from '../context/CompanyContext';
 import { supabase } from '../lib/supabase';
-import { Invoice, InvoiceStatus } from '../types';
+import { Invoice, InvoiceStatus, BusinessProfile } from '../types';
 import { formatINR } from '../utils/currency';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { shareInvoicePDF } from '../utils/shareService';
@@ -24,10 +25,12 @@ interface InvoiceHistoryPageProps {
 
 export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurrentTab }) => {
   const { user, businessProfile } = useAuth();
+  const { activeCompany, activeCompanyId, companies, isItemForActiveCompany, resolveCompany } = useCompany();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [viewFilter, setViewFilter] = useState<'active' | 'all'>('active');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
@@ -80,12 +83,36 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
     }
   };
 
+  const getProfileForInvoice = (inv: Invoice): BusinessProfile => {
+    const issuingCompany = resolveCompany(inv.company_id) || activeCompany || businessProfile;
+    return {
+      id: issuingCompany?.id || 'comp-default',
+      user_id: user?.id || '',
+      name: issuingCompany?.name || 'My Business',
+      address: issuingCompany?.address || '',
+      phone: issuingCompany?.phone || '',
+      email: issuingCompany?.email || user?.email || '',
+      gstin: issuingCompany?.gstin || '',
+      logo_url: issuingCompany?.logo_url || '',
+      bank_name: issuingCompany?.bank_name || '',
+      account_no: issuingCompany?.account_no || '',
+      ifsc: issuingCompany?.ifsc || '',
+      signature_url: issuingCompany?.signature_url || '',
+      upi_id: issuingCompany?.upi_id || '',
+      terms_conditions: issuingCompany?.terms_conditions || ''
+    };
+  };
+
   const handleDownloadPDF = async (inv: Invoice) => {
-    if (!businessProfile) return;
     setDownloadingId(inv.id);
     try {
-      const doc = await generateInvoicePDF(inv, businessProfile, inv.customer);
-      doc.save(`${inv.invoice_number}_${inv.customer?.name || 'Invoice'}.pdf`);
+      const profileToUse = getProfileForInvoice(inv);
+      const doc = await generateInvoicePDF(inv, profileToUse, inv.customer);
+      const safeCustomer = (inv.customer?.name || 'Customer').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeNumber = (inv.invoice_number || 'INV').replace(/[^a-zA-Z0-9_-]/g, '_');
+      doc.save(`BillKaro_${safeNumber}_${safeCustomer}.pdf`);
+      setShareNotice('Invoice PDF downloaded.');
+      setTimeout(() => setShareNotice(null), 4000);
     } catch (e) {
       console.error('PDF error:', e);
     } finally {
@@ -94,10 +121,10 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
   };
 
   const handleShare = async (inv: Invoice) => {
-    if (!businessProfile) return;
     setSharingId(inv.id);
     try {
-      const res = await shareInvoicePDF(inv, businessProfile, inv.customer);
+      const profileToUse = getProfileForInvoice(inv);
+      const res = await shareInvoicePDF(inv, profileToUse, inv.customer);
       if (res.message) {
         setShareNotice(res.message);
         setTimeout(() => setShareNotice(null), 5000);
@@ -129,6 +156,9 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
   };
 
   const filteredInvoices = invoices.filter(inv => {
+    if (viewFilter === 'active' && !isItemForActiveCompany(inv)) {
+      return false;
+    }
     const matchesSearch =
       inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (inv.customer?.name && inv.customer.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -158,6 +188,40 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
           <span>Create New Invoice</span>
         </button>
       </div>
+
+      {/* View Filter Pill Bar (When multiple companies exist) */}
+      {companies.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-2xl border border-slate-200/70 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Invoices For:</span>
+            <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 text-xs font-black">
+              {viewFilter === 'active' ? (activeCompany?.name || 'Active Business') : 'All Businesses Combined'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setViewFilter('active')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer min-h-[32px] ${
+                viewFilter === 'active'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              {activeCompany?.name || 'Active Business'} Only
+            </button>
+            <button
+              onClick={() => setViewFilter('all')}
+              className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer min-h-[32px] ${
+                viewFilter === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 border border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              All Businesses ({invoices.length})
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Share Notice Toast */}
       {shareNotice && (
@@ -247,7 +311,14 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
                   {filteredInvoices.map(inv => (
                     <tr key={inv.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-white">
-                        {inv.invoice_number}
+                        <div className="flex flex-col">
+                          <span>{inv.invoice_number}</span>
+                          {companies.length > 1 && (
+                            <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400">
+                              {resolveCompany(inv.company_id)?.name || 'Primary'}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3.5 px-4 font-medium">
                         <div className="font-bold text-slate-900 dark:text-white">{inv.customer?.name || 'Cash Customer'}</div>
@@ -331,9 +402,16 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                        {inv.invoice_number}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-slate-900 dark:text-white text-sm">
+                          {inv.invoice_number}
+                        </span>
+                        {companies.length > 1 && (
+                          <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.2 rounded">
+                            {resolveCompany(inv.company_id)?.name || 'Primary'}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-slate-400 mt-0.5">{inv.invoice_date}</p>
                     </div>
                     <div className="text-right">
