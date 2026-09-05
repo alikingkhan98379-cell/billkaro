@@ -10,6 +10,7 @@ import {
   SignupOtpResponse,
   PaymentRecord
 } from '../types';
+import { PlanId } from '../config/plans';
 
 interface AuthContextType {
   user: User | null;
@@ -140,16 +141,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchSubscription = async (userId: string): Promise<Subscription | null> => {
     try {
       setSubscriptionLoading(true);
-      const { data: subData, error: subErr } = await supabase
+      const { data: subList, error: subErr } = await supabase
         .from('subscriptions')
         .select('*')
         .eq('user_id', userId)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
 
-      if (!subErr && subData) {
-        setSubscription(subData);
-        return subData;
-      } else if (!subErr && !subData) {
+      if (!subErr && subList && subList.length > 0) {
+        // Prioritize any active premium subscription among records
+        const activeSub = subList.find(s => isSubscriptionActive(s)) || subList[0];
+        setSubscription(activeSub);
+        return activeSub;
+      } else if (!subErr && (!subList || subList.length === 0)) {
         const { data: newSub } = await supabase
           .from('subscriptions')
           .upsert(
@@ -780,17 +783,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isSubscriptionActive = (sub: Subscription | null = subscription): boolean => {
     if (!sub) return false;
-    if (sub.plan === 'free' && (!sub.plan_id || sub.plan_id === 'free')) return false;
-    if (sub.status && sub.status !== 'ACTIVE') return false;
-    if (!sub.is_active) return false;
+    const planName = (sub.plan_id || sub.plan || '').toLowerCase().trim();
+    if (!planName || planName === 'free') return false;
+
+    // Status check: must be active/approved/success or unset
+    if (sub.status) {
+      const st = String(sub.status).trim().toUpperCase();
+      if (st !== 'ACTIVE' && st !== 'APPROVED' && st !== 'SUCCESS') {
+        return false;
+      }
+    }
+
+    // is_active: only false if explicitly false
+    if (sub.is_active === false) return false;
+
     if (sub.expiry_date) {
       return new Date(sub.expiry_date).getTime() > Date.now();
     }
-    return ['premium', 'monthly', 'six_months', 'yearly'].includes(sub.plan || sub.plan_id || '');
+
+    return ['premium', 'monthly', 'six_months', 'yearly', 'annual', 'lifetime', 'pro'].includes(planName);
   };
 
   const isPremium = isSubscriptionActive(subscription);
-  const planId = subscription?.plan_id || subscription?.plan || 'free';
+  const planId = (isPremium ? (subscription?.plan_id || subscription?.plan || 'monthly') : 'free') as PlanId;
   const isAdmin = user?.email === 'smartgstbill@gmail.com' || user?.email === 'admin@billkaro.com' || (user?.app_metadata as any)?.role === 'admin';
 
   const premiumState: PremiumState = (() => {

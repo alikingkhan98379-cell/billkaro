@@ -78,7 +78,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
   setCurrentTab,
   onInvoiceCreated
 }) => {
-  const { user, businessProfile, subscription } = useAuth();
+  const { user, businessProfile, subscription, isPremium, planId, subscriptionLoading } = useAuth();
   const { activeCompany, activeCompanyId, companies, isItemForActiveCompany } = useCompany();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -182,7 +182,8 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
           });
 
-          if (subscription?.plan !== 'premium' && thisMonthInvoices.length >= 5) {
+          // Authoritative monthly limit check: only display modal if user is definitely on free plan, not loading, and not premium
+          if (!isPremium && !subscriptionLoading && planId === 'free' && thisMonthInvoices.length >= 5) {
             setUpgradeModalOpen(true);
           }
 
@@ -199,7 +200,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
     };
 
     loadData();
-  }, [user, subscription, activeCompany, activeCompanyId]);
+  }, [user, subscription, isPremium, planId, subscriptionLoading, activeCompany, activeCompanyId]);
 
   // Unsaved changes protection
   useEffect(() => {
