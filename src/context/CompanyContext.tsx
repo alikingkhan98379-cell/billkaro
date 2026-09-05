@@ -49,14 +49,19 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setLoading(true);
     try {
-      const saved = localStorage.getItem(storageKey);
       let list: Company[] = [];
 
-      if (saved) {
-        try {
-          list = JSON.parse(saved);
-        } catch (e) {
-          list = [];
+      // 1. Check cloud database companies_data first (survives device / domain / browser changes)
+      if (businessProfile?.companies_data && Array.isArray(businessProfile.companies_data) && businessProfile.companies_data.length > 0) {
+        list = businessProfile.companies_data;
+      } else {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          try {
+            list = JSON.parse(saved);
+          } catch (e) {
+            list = [];
+          }
         }
       }
 
@@ -124,7 +129,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setCompanies(list);
 
-      const savedActiveId = localStorage.getItem(activeKey);
+      const savedActiveId = businessProfile?.active_company_id || localStorage.getItem(activeKey);
       if (savedActiveId && list.some(c => c.id === savedActiveId)) {
         setActiveCompanyId(savedActiveId);
       } else if (list.length > 0) {
@@ -165,7 +170,9 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       ifsc: target.ifsc || '',
       signature_url: target.signature_url || '',
       upi_id: target.upi_id || '',
-      terms_conditions: target.terms_conditions || ''
+      terms_conditions: target.terms_conditions || '',
+      companies_data: companies,
+      active_company_id: companyId
     });
   };
 
@@ -209,8 +216,26 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCompanies(updatedList);
     localStorage.setItem(storageKey, JSON.stringify(updatedList));
 
-    // Automatically switch to newly created company
-    await switchCompany(newCompany.id);
+    // Automatically switch to newly created company and sync to Supabase cloud
+    setActiveCompanyId(newCompany.id);
+    localStorage.setItem(activeKey, newCompany.id);
+
+    await updateBusinessProfile({
+      name: newCompany.name,
+      address: newCompany.address || '',
+      phone: newCompany.phone || '',
+      email: newCompany.email || '',
+      gstin: newCompany.gstin || '',
+      logo_url: newCompany.logo_url || '',
+      bank_name: newCompany.bank_name || '',
+      account_no: newCompany.account_no || '',
+      ifsc: newCompany.ifsc || '',
+      signature_url: newCompany.signature_url || '',
+      upi_id: newCompany.upi_id || '',
+      terms_conditions: newCompany.terms_conditions || '',
+      companies_data: updatedList,
+      active_company_id: newCompany.id
+    });
 
     return { success: true, company: newCompany };
   };
@@ -230,23 +255,28 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCompanies(updatedList);
     localStorage.setItem(storageKey, JSON.stringify(updatedList));
 
+    const cloudPayload: any = {
+      companies_data: updatedList
+    };
+
     // If updating currently active company, also sync to business_profile
     if (companyId === activeCompanyId) {
-      await updateBusinessProfile({
-        name: updatedCompany.name,
-        address: updatedCompany.address || '',
-        phone: updatedCompany.phone || '',
-        email: updatedCompany.email || '',
-        gstin: updatedCompany.gstin || '',
-        logo_url: updatedCompany.logo_url || '',
-        bank_name: updatedCompany.bank_name || '',
-        account_no: updatedCompany.account_no || '',
-        ifsc: updatedCompany.ifsc || '',
-        signature_url: updatedCompany.signature_url || '',
-        upi_id: updatedCompany.upi_id || '',
-        terms_conditions: updatedCompany.terms_conditions || ''
-      });
+      cloudPayload.name = updatedCompany.name;
+      cloudPayload.address = updatedCompany.address || '';
+      cloudPayload.phone = updatedCompany.phone || '';
+      cloudPayload.email = updatedCompany.email || '';
+      cloudPayload.gstin = updatedCompany.gstin || '';
+      cloudPayload.logo_url = updatedCompany.logo_url || '';
+      cloudPayload.bank_name = updatedCompany.bank_name || '';
+      cloudPayload.account_no = updatedCompany.account_no || '';
+      cloudPayload.ifsc = updatedCompany.ifsc || '';
+      cloudPayload.signature_url = updatedCompany.signature_url || '';
+      cloudPayload.upi_id = updatedCompany.upi_id || '';
+      cloudPayload.terms_conditions = updatedCompany.terms_conditions || '';
+      cloudPayload.active_company_id = companyId;
     }
+
+    await updateBusinessProfile(cloudPayload);
 
     return { success: true };
   };
@@ -263,6 +293,8 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     if (companyId === activeCompanyId && updatedList.length > 0) {
       await switchCompany(updatedList[0].id);
+    } else {
+      await updateBusinessProfile({ companies_data: updatedList });
     }
 
     return { success: true };

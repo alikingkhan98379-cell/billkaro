@@ -188,11 +188,17 @@ export const BusinessProfilePage: React.FC = () => {
     const res = await verifyGSTINWithBackend(newCompanyGstin);
     setFetchingNewCompanyGst(false);
 
-    if (res.success && res.data) {
-      if (res.data.company_name) setNewCompanyName(res.data.company_name);
+    if (res.data?.state) {
+      setNewCompanyState(res.data.state);
+    }
+
+    if (res.success && res.data && res.data.company_name) {
+      setNewCompanyName(res.data.company_name);
       if (res.data.address) setNewCompanyAddress(res.data.address);
       if (res.data.state) setNewCompanyState(res.data.state);
-      setNewCompanyGstSuccess(`✓ Verified GST: ${res.data.company_name || 'Details auto-filled'}`);
+      setNewCompanyGstSuccess(`✓ Verified GST: ${res.data.company_name} auto-filled!`);
+    } else if (res.data?.state) {
+      setAddCompanyError(res.error || `State '${res.data.state}' auto-detected! Live company lookup credit expired. Please enter Company Name & Address manually.`);
     } else {
       setAddCompanyError(res.error || 'Could not verify GSTIN. You can enter details manually.');
     }
@@ -254,12 +260,14 @@ export const BusinessProfilePage: React.FC = () => {
     const result = await verifyGSTINWithBackend(gstin);
     setFetchingGst(false);
 
-    if (result.success && result.data) {
-      if (result.data.company_name) setName(result.data.company_name);
+    if (result.success && result.data && result.data.company_name) {
+      setName(result.data.company_name);
       if (result.data.address) setAddress(result.data.address);
-      setSuccessMessage('✓ Business details auto-filled from verified GST records!');
+      setSuccessMessage(`✓ Business details auto-filled for ${result.data.company_name}!`);
+    } else if (result.data?.state) {
+      setErrorMessage(result.error || `State '${result.data.state}' auto-detected! Live GST lookup credit expired. Please enter Business Name & Address manually.`);
     } else {
-      setErrorMessage(result.error || 'Could not auto-fetch GST details.');
+      setErrorMessage(result.error || 'Could not auto-fetch GST details. Please enter manually.');
     }
   };
 

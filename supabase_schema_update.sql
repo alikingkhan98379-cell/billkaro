@@ -16,6 +16,9 @@ ALTER TABLE IF EXISTS public.products ADD COLUMN IF NOT EXISTS company_id TEXT;
 ALTER TABLE IF EXISTS public.products ALTER COLUMN company_id TYPE TEXT;
 CREATE INDEX IF NOT EXISTS idx_products_company_id ON public.products(company_id);
 
+ALTER TABLE IF EXISTS public.business_profile ADD COLUMN IF NOT EXISTS companies_data JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE IF EXISTS public.business_profile ADD COLUMN IF NOT EXISTS active_company_id TEXT;
+
 -- 2. Subscriptions Table Columns (Ensure all fields exist)
 DO $$
 BEGIN

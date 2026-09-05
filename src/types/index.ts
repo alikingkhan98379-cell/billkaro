@@ -21,6 +21,8 @@ export interface BusinessProfile {
   signature_url: string;
   upi_id: string;
   terms_conditions: string;
+  companies_data?: Company[];
+  active_company_id?: string;
   created_at?: string;
   updated_at?: string;
 }

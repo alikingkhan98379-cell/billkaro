@@ -68,11 +68,16 @@ export interface GSTVerificationResult {
 //
 // 📍 MANUAL EDIT LOCATION:
 // File: src/utils/gstinService.ts -> GST_API_KEYS array
+//
+// 💡 Nayi Free / Paid API Keys lene ke liye:
+// 1. https://sheet.gstincheck.co.in par visit karein.
+// 2. Apni nayi API Key generate karein.
+// 3. Niche GST_API_KEYS array me add karein.
 // =========================================================================
-const GST_API_KEYS: string[] = [
-  'b327cfadf9231bd5156f7285a4c08d0c', // 🌟 Primary Active Key (Updated)
+export const GST_API_KEYS: string[] = [
+  'b327cfadf9231bd5156f7285a4c08d0c', // 🌟 Active Key #1
   '8e5294b4113c9b01e0d29b170b7346b1', // 🛡️ Backup Key #2
-  // Future me aur keys add karne ke liye niche comma laga kar daalein:
+  // Nayi API Keys yahan add karein (comma laga kar):
   // 'YOUR_NEXT_KEY_HERE',
 ];
 
@@ -81,6 +86,17 @@ export function getStateFromGSTIN(gstin: string): string {
   if (clean.length >= 2) {
     const code = clean.substring(0, 2);
     return GST_STATE_MAP[code] || '';
+  }
+  return '';
+}
+
+/**
+ * Extracts PAN number from a 15-digit GSTIN (characters 3-12)
+ */
+export function getPANFromGSTIN(gstin: string): string {
+  const clean = gstin.trim().toUpperCase();
+  if (clean.length >= 12) {
+    return clean.substring(2, 12);
   }
   return '';
 }
@@ -180,28 +196,30 @@ export async function verifyGSTINWithBackend(rawGstin: string): Promise<GSTVerif
         const pincode = (rawData.pradr && rawData.pradr.addr && rawData.pradr.addr.pncd) || rawData.pincode || '';
         const gstStatus = rawData.sts || rawData.status || 'Active';
 
-        return {
-          success: true,
-          data: {
-            gstin: cleanGstin,
-            company_name: companyName,
-            legal_name: legalName,
-            trade_name: tradeName,
-            address: formattedAddress,
-            state: state,
-            pincode: pincode,
-            status: gstStatus
-          }
-        };
+        if (companyName) {
+          return {
+            success: true,
+            data: {
+              gstin: cleanGstin,
+              company_name: companyName,
+              legal_name: legalName,
+              trade_name: tradeName,
+              address: formattedAddress,
+              state: state,
+              pincode: pincode,
+              status: gstStatus
+            }
+          };
+        }
       } catch (keyErr) {
         console.warn('GST key attempt error, trying next fallback key:', keyErr);
         continue;
       }
     }
 
-    // If all keys in the pool were exhausted or rate limited, gracefully return auto-detected state
+    // If all keys in the pool were exhausted, expired, or rate limited:
     return {
-      success: true,
+      success: false,
       data: {
         gstin: cleanGstin,
         company_name: '',
@@ -210,12 +228,15 @@ export async function verifyGSTINWithBackend(rawGstin: string): Promise<GSTVerif
         address: '',
         state: fallbackState
       },
-      notice: lastErrorMessage || `State '${fallbackState}' auto-detected!`
+      error: lastErrorMessage 
+        ? `API Key Notice: ${lastErrorMessage}. State '${fallbackState}' auto-detected. Please enter Company Name & Address manually, or update API key.`
+        : `State '${fallbackState}' auto-detected. Live GST lookup requires active API credits on gstincheck.co.in. Please enter details manually.`,
+      notice: `State '${fallbackState}' auto-detected!`
     };
   } catch (err: any) {
     console.error('GSTIN verification fetch error:', err);
     return {
-      success: true,
+      success: false,
       data: {
         gstin: cleanGstin,
         company_name: '',
@@ -224,6 +245,7 @@ export async function verifyGSTINWithBackend(rawGstin: string): Promise<GSTVerif
         address: '',
         state: fallbackState
       },
+      error: `State '${fallbackState}' auto-detected! Please enter Company Name & Address manually.`,
       notice: `State '${fallbackState}' auto-detected!`
     };
   }

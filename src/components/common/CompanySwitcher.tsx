@@ -93,11 +93,17 @@ export const CompanySwitcher: React.FC<CompanySwitcherProps> = ({
     const res = await verifyGSTINWithBackend(gstin);
     setFetchingGst(false);
 
-    if (res.success && res.data) {
-      if (res.data.company_name) setName(res.data.company_name);
+    if (res.data?.state) {
+      setState(res.data.state);
+    }
+
+    if (res.success && res.data && res.data.company_name) {
+      setName(res.data.company_name);
       if (res.data.address) setAddress(res.data.address);
       if (res.data.state) setState(res.data.state);
-      setSuccessMessage(`✓ GST Verified: ${res.data.company_name || 'Details auto-filled'}`);
+      setSuccessMessage(`✓ GST Verified: ${res.data.company_name} auto-filled!`);
+    } else if (res.data?.state) {
+      setErrorMessage(res.error || `State '${res.data.state}' auto-detected. Live GST lookup credit expired. Please enter Company Name manually.`);
     } else {
       setErrorMessage(res.error || 'Could not verify GSTIN. Please enter company details manually.');
     }

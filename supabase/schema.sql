@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS public.business_profile (
     signature_url TEXT DEFAULT '',
     upi_id TEXT DEFAULT '',
     full_name TEXT DEFAULT '',
+    companies_data JSONB DEFAULT '[]'::jsonb,
+    active_company_id TEXT DEFAULT '',
     last_login_at TIMESTAMPTZ DEFAULT now(),
     terms_conditions TEXT DEFAULT '1. Goods once sold will not be taken back.
 2. Payment due within 15 days of invoice date.
