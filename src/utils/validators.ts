@@ -93,3 +93,26 @@ export function isCompanyIdOrUuidError(err?: any): boolean {
   );
 }
 
+export function isSchemaMismatchError(err?: any): boolean {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  const code = (err.code || '').toUpperCase();
+  return (
+    code === 'PGRST204' ||
+    code === '42703' ||
+    code === '22P02' ||
+    msg.includes('schema cache') ||
+    msg.includes('could not find the') ||
+    msg.includes('column of') ||
+    msg.includes('does not exist') ||
+    msg.includes('driver_phone') ||
+    msg.includes('vehicle_number') ||
+    msg.includes('transport_name') ||
+    msg.includes('lr_number') ||
+    msg.includes('company_id') ||
+    msg.includes('uuid') ||
+    msg.includes('invalid input syntax')
+  );
+}
+
+

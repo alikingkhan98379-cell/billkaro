@@ -35,7 +35,7 @@ import { formatINR, numberToIndianWords } from '../utils/currency';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { shareInvoicePDF, downloadInvoicePDF } from '../utils/shareService';
 import { Modal } from '../components/common/Modal';
-import { isValidIndianPhone, isValidGSTIN, isValidEmail, isValidUUID, isCompanyIdOrUuidError } from '../utils/validators';
+import { isValidIndianPhone, isValidGSTIN, isValidEmail, isValidUUID, isCompanyIdOrUuidError, isSchemaMismatchError } from '../utils/validators';
 import { verifyGSTINWithBackend } from '../utils/gstinService';
 
 interface InvoiceCreatePageProps {
@@ -576,10 +576,19 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           .select()
           .single();
 
-        // Resilient fallback retry: If Supabase schema does not have company_id column or UUID mismatch, retry without it
-        if (invError && isCompanyIdOrUuidError(invError)) {
-          console.warn('Database schema company_id/UUID fallback activated. Retrying insert...');
-          delete invPayload.company_id;
+        // 1. Resilient Schema Fallback: If live Supabase schema is missing transport columns, company_id, or UUID mismatch
+        if (invError && (isSchemaMismatchError(invError) || isCompanyIdOrUuidError(invError))) {
+          console.warn('Database schema mismatch detected. Activating auto-healing fallback...', invError.message);
+          
+          delete invPayload.vehicle_number;
+          delete invPayload.driver_phone;
+          delete invPayload.transport_name;
+          delete invPayload.lr_number;
+          
+          if (isCompanyIdOrUuidError(invError)) {
+            delete invPayload.company_id;
+          }
+
           const retryRes = await supabase
             .from('invoices')
             .insert(invPayload)
@@ -589,7 +598,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           invError = retryRes.error;
         }
 
-        // Duplicate Invoice Number Auto-Resolver: If number collision occurs, automatically find next available number and save
+        // 2. Duplicate Invoice Number Auto-Resolver: If number collision occurs, automatically find next available number and save
         const isDuplicateError = (err: any) => {
           if (!err) return false;
           const msg = (err.message || '').toLowerCase();
@@ -617,6 +626,23 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           
           invData = retryRes.data;
           invError = retryRes.error;
+        }
+
+        // 3. Second pass schema fallback in case duplicate retry encountered schema error
+        if (invError && (isSchemaMismatchError(invError) || isCompanyIdOrUuidError(invError))) {
+          delete invPayload.vehicle_number;
+          delete invPayload.driver_phone;
+          delete invPayload.transport_name;
+          delete invPayload.lr_number;
+          delete invPayload.company_id;
+
+          const retryRes2 = await supabase
+            .from('invoices')
+            .insert(invPayload)
+            .select()
+            .single();
+          invData = retryRes2.data;
+          invError = retryRes2.error;
         }
 
         if (invError) {
