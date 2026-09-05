@@ -76,9 +76,13 @@ CREATE TABLE IF NOT EXISTS public.invoices (
     grand_total NUMERIC(12,2) NOT NULL DEFAULT 0.00 CHECK (grand_total >= 0),
     status TEXT NOT NULL DEFAULT 'UNPAID' CHECK (status IN ('PAID', 'UNPAID', 'PARTIAL', 'OVERDUE')),
     notes TEXT DEFAULT '',
+    company_id TEXT,
+    vehicle_number TEXT,
+    driver_phone TEXT,
+    transport_name TEXT,
+    lr_number TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(user_id, invoice_number)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- 5. Invoice Line Items

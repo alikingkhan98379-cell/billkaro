@@ -315,6 +315,79 @@ export async function generateInvoicePDF(
   currentY = partyBoxStartY + partyBoxHeight;
 
   // --------------------------------------------------------------------------
+  // 3.5 TRANSPORT & DISPATCH DETAILS (OPTIONAL BOX)
+  // --------------------------------------------------------------------------
+  const hasTransportDetails = !!(
+    (invoice.vehicle_number && invoice.vehicle_number.trim()) ||
+    (invoice.driver_phone && invoice.driver_phone.trim()) ||
+    (invoice.transport_name && invoice.transport_name.trim()) ||
+    (invoice.lr_number && invoice.lr_number.trim())
+  );
+
+  if (hasTransportDetails) {
+    const transportBoxY = currentY;
+    const transportBoxHeight = 8.5; // compact accounting row
+
+    doc.setFillColor(...headerBg);
+    doc.rect(margin, transportBoxY, contentWidth, transportBoxHeight, 'F');
+
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.3);
+    doc.rect(margin, transportBoxY, contentWidth, transportBoxHeight);
+
+    const tColWidth = contentWidth / 4; // 186 / 4 = 46.5mm
+    doc.line(margin + tColWidth, transportBoxY, margin + tColWidth, transportBoxY + transportBoxHeight);
+    doc.line(margin + tColWidth * 2, transportBoxY, margin + tColWidth * 2, transportBoxY + transportBoxHeight);
+    doc.line(margin + tColWidth * 3, transportBoxY, margin + tColWidth * 3, transportBoxY + transportBoxHeight);
+
+    // Col 1: Transporter Name / Mode
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(...grayText);
+    doc.text('Transporter Name / Mode:', margin + 2.5, transportBoxY + 3.2);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...textColor);
+    const tName = invoice.transport_name?.trim() || '-';
+    doc.text(doc.splitTextToSize(tName, tColWidth - 4)[0], margin + 2.5, transportBoxY + 6.8);
+
+    // Col 2: Vehicle Number
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(...grayText);
+    doc.text('Vehicle Number (गाड़ी नं.):', margin + tColWidth + 2.5, transportBoxY + 3.2);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...textColor);
+    const vNum = (invoice.vehicle_number?.trim() || '-').toUpperCase();
+    doc.text(vNum, margin + tColWidth + 2.5, transportBoxY + 6.8);
+
+    // Col 3: Driver Contact
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(...grayText);
+    doc.text('Driver Contact:', margin + tColWidth * 2 + 2.5, transportBoxY + 3.2);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...textColor);
+    const dPhone = invoice.driver_phone?.trim() || '-';
+    doc.text(dPhone, margin + tColWidth * 2 + 2.5, transportBoxY + 6.8);
+
+    // Col 4: LR / Bilty No.
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(...grayText);
+    doc.text('LR / Bilty / Docket No.:', margin + tColWidth * 3 + 2.5, transportBoxY + 3.2);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...textColor);
+    const lrNum = invoice.lr_number?.trim() || '-';
+    doc.text(lrNum, margin + tColWidth * 3 + 2.5, transportBoxY + 6.8);
+
+    currentY += transportBoxHeight;
+  }
+
+  // --------------------------------------------------------------------------
   // 4. ITEMS TABLE (MATCHING REFERENCE ACCOUNTING LEDGER GRID)
   // --------------------------------------------------------------------------
   // Exact column widths:

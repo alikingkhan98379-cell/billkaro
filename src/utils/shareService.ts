@@ -131,8 +131,19 @@ export async function shareInvoicePDF(
 
     // 3. Open WhatsApp with clean, professional short text
     const phone = customer?.phone ? customer.phone.replace(/[^0-9]/g, '') : '';
+    let transportExtra = '';
+    if (invoice.vehicle_number?.trim()) {
+      transportExtra += `\n🚛 Vehicle: *${invoice.vehicle_number.trim().toUpperCase()}*`;
+    }
+    if (invoice.transport_name?.trim()) {
+      transportExtra += `\n🏢 Transport: *${invoice.transport_name.trim()}*`;
+    }
+    if (invoice.driver_phone?.trim()) {
+      transportExtra += `\n📱 Driver: *${invoice.driver_phone.trim()}*`;
+    }
+
     const cleanMsg = encodeURIComponent(
-      `Hello ${customer?.name || 'Customer'},\n\nPlease find attached Tax Invoice *${invoiceNo}* for ₹${Number(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })} from *${businessName}*.\n\nThank you for your business!`
+      `Hello ${customer?.name || 'Customer'},\n\nPlease find attached Tax Invoice *${invoiceNo}* for ₹${Number(invoice.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })} from *${businessName}*.${transportExtra}\n\nThank you for your business!`
     );
 
     let waUrl = `https://wa.me/?text=${cleanMsg}`;

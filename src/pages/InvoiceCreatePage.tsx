@@ -20,7 +20,10 @@ import {
   FileText,
   CreditCard,
   Percent,
-  CheckCheck
+  CheckCheck,
+  Truck,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
@@ -99,6 +102,13 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
   const [customerAddress, setCustomerAddress] = useState<string>('');
   const [saveToDirectory, setSaveToDirectory] = useState<boolean>(false);
   const [isManualCustomer, setIsManualCustomer] = useState<boolean>(false);
+
+  // Transport & Delivery Details (Optional)
+  const [vehicleNumber, setVehicleNumber] = useState<string>('');
+  const [driverPhone, setDriverPhone] = useState<string>('');
+  const [transportName, setTransportName] = useState<string>('');
+  const [lrNumber, setLrNumber] = useState<string>('');
+  const [showTransportDetails, setShowTransportDetails] = useState<boolean>(false);
 
   const [items, setItems] = useState<InvoiceItem[]>([
     {
@@ -452,6 +462,10 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
         grand_total: totals.grandTotal,
         status: action === 'draft' ? 'UNPAID' : 'PAID',
         notes: notes.trim(),
+        vehicle_number: vehicleNumber.trim() ? vehicleNumber.trim().toUpperCase() : undefined,
+        driver_phone: driverPhone.trim() || undefined,
+        transport_name: transportName.trim() || undefined,
+        lr_number: lrNumber.trim() || undefined,
         items: lineItemsPayload,
         customer: activeCustomerObject
       };
@@ -546,7 +560,11 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           discount: totals.discountAmount,
           grand_total: totals.grandTotal,
           status: action === 'draft' ? 'UNPAID' : 'PAID',
-          notes: notes.trim()
+          notes: notes.trim(),
+          vehicle_number: vehicleNumber.trim() ? vehicleNumber.trim().toUpperCase() : null,
+          driver_phone: driverPhone.trim() || null,
+          transport_name: transportName.trim() || null,
+          lr_number: lrNumber.trim() || null
         };
         if (currentCompanyId && isValidUUID(currentCompanyId)) {
           invPayload.company_id = currentCompanyId;
@@ -899,6 +917,93 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          {/* SECTION 2.5: TRANSPORT & DELIVERY DETAILS (OPTIONAL) */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-xs font-bold">
+                  <Truck className="w-3.5 h-3.5" />
+                </span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Transport & Delivery Details</span>
+                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800/60 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Optional
+                  </span>
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTransportDetails(!showTransportDetails)}
+                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 cursor-pointer min-h-[36px] px-2 py-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              >
+                <span>{showTransportDetails ? 'Hide Details' : (vehicleNumber || driverPhone || transportName || lrNumber ? 'Edit Transport' : '+ Add Transport / Vehicle')}</span>
+                {showTransportDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
+            {/* Collapsible/Expandable Form Fields */}
+            {(showTransportDetails || vehicleNumber || driverPhone || transportName || lrNumber) ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    🚛 Vehicle Number (गाड़ी नं.)
+                  </label>
+                  <input
+                    type="text"
+                    value={vehicleNumber}
+                    onChange={e => setVehicleNumber(e.target.value.toUpperCase())}
+                    placeholder="e.g. DL 01 AB 1234"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-slate-100 uppercase focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    📱 Driver Phone (ड्राइवर नंबर)
+                  </label>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={driverPhone}
+                    onChange={e => setDriverPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                    placeholder="9876543210"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    🏢 Transporter Name / Mode
+                  </label>
+                  <input
+                    type="text"
+                    value={transportName}
+                    onChange={e => setTransportName(e.target.value)}
+                    placeholder="e.g. VRL Logistics, Self"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    📄 LR / Bilty / Docket No.
+                  </label>
+                  <input
+                    type="text"
+                    value={lrNumber}
+                    onChange={e => setLrNumber(e.target.value)}
+                    placeholder="e.g. LR-88219"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                Add optional Vehicle No, Driver Contact, Transporter Name, or LR/Bilty No for dispatch & delivery tracking.
+              </p>
+            )}
           </div>
 
           {/* SECTION 3: LINE ITEMS TABLE */}

@@ -8,7 +8,8 @@ import {
   RefreshCw, 
   FileText, 
   CheckCircle2, 
-  AlertCircle
+  AlertCircle,
+  Truck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCompany } from '../context/CompanyContext';
@@ -159,10 +160,16 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
     if (viewFilter === 'active' && !isItemForActiveCompany(inv)) {
       return false;
     }
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      inv.invoice_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (inv.customer?.name && inv.customer.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (inv.customer?.phone && inv.customer.phone.includes(searchQuery));
+      !q ||
+      inv.invoice_number.toLowerCase().includes(q) ||
+      (inv.customer?.name && inv.customer.name.toLowerCase().includes(q)) ||
+      (inv.customer?.phone && inv.customer.phone.includes(q)) ||
+      (inv.vehicle_number && inv.vehicle_number.toLowerCase().includes(q)) ||
+      (inv.transport_name && inv.transport_name.toLowerCase().includes(q)) ||
+      (inv.driver_phone && inv.driver_phone.includes(q)) ||
+      (inv.lr_number && inv.lr_number.toLowerCase().includes(q));
 
     const matchesStatus = statusFilter === 'ALL' || inv.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -243,7 +250,7 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search invoice #, party, phone..."
+              placeholder="Search invoice #, party, vehicle no, phone..."
               className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
             />
           </div>
@@ -324,6 +331,12 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
                         <div className="font-bold text-slate-900 dark:text-white">{inv.customer?.name || 'Cash Customer'}</div>
                         {inv.customer?.phone && (
                           <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{inv.customer.phone}</div>
+                        )}
+                        {(inv.vehicle_number || inv.transport_name) && (
+                          <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded mt-0.5 border border-emerald-200/50 dark:border-emerald-800/50">
+                            <Truck className="w-2.5 h-2.5" />
+                            <span>{inv.vehicle_number ? inv.vehicle_number.toUpperCase() : inv.transport_name}</span>
+                          </div>
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400">
@@ -422,8 +435,16 @@ export const InvoiceHistoryPage: React.FC<InvoiceHistoryPageProps> = ({ setCurre
                   </div>
 
                   <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
-                    <div className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[150px]">
-                      {inv.customer?.name || 'Cash Customer'}
+                    <div>
+                      <div className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[150px]">
+                        {inv.customer?.name || 'Cash Customer'}
+                      </div>
+                      {(inv.vehicle_number || inv.transport_name) && (
+                        <div className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.2 rounded mt-0.5 border border-emerald-200/50 dark:border-emerald-800/50">
+                          <Truck className="w-2.5 h-2.5" />
+                          <span>{inv.vehicle_number ? inv.vehicle_number.toUpperCase() : inv.transport_name}</span>
+                        </div>
+                      )}
                     </div>
                     <select
                       value={inv.status}

@@ -30,6 +30,12 @@ END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_user_company_num 
 ON public.invoices (user_id, COALESCE(company_id, ''), LOWER(TRIM(invoice_number)));
 
+-- 1.2 Invoices Transport & Delivery Details (Optional Fields)
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS vehicle_number TEXT;
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS driver_phone TEXT;
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS transport_name TEXT;
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS lr_number TEXT;
+
 -- 2. Subscriptions Table Columns (Ensure all fields exist)
 DO $$
 BEGIN

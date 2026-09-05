@@ -126,6 +126,10 @@ export interface Invoice {
   grand_total: number;
   status: InvoiceStatus;
   notes?: string;
+  vehicle_number?: string;
+  driver_phone?: string;
+  transport_name?: string;
+  lr_number?: string;
   created_at?: string;
   updated_at?: string;
   customer?: Customer;
