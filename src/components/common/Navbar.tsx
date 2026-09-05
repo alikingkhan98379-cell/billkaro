@@ -17,6 +17,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useRouter } from '../../context/RouterContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Badge } from './Badge';
+import { CompanySwitcher } from './CompanySwitcher';
 
 interface NavbarProps {
   mobileMenuOpen: boolean;
@@ -73,11 +74,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           </div>
 
-          {/* Center Quick Action */}
-          <div className="hidden md:flex items-center gap-3">
+          {/* Center Company Switcher & Quick Action */}
+          <div className="hidden sm:flex items-center gap-2.5">
+            <CompanySwitcher />
             <button
               onClick={() => navigate('create-invoice')}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-sm hover:shadow-md active:scale-98 cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold rounded-xl transition shadow-sm hover:shadow-md active:scale-98 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Create Invoice</span>

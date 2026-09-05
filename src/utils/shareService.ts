@@ -9,16 +9,29 @@ export interface ShareResult {
 }
 
 /**
- * Clean filename helper
+ * Sanitize filename string for maximum OS compatibility (Android, iOS, Windows, Linux)
+ */
+export function sanitizeFilename(str: string, fallback: string = 'Invoice'): string {
+  if (!str) return fallback;
+  const cleaned = str
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .trim();
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+/**
+ * Clean filename helper: BillKaro_INV-0001_CustomerName.pdf
  */
 export function getInvoicePdfFileName(invoice: Invoice, customer?: Customer): string {
-  const safeNumber = (invoice.invoice_number || 'INV').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const safeCustomer = (customer?.name || 'Customer').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeNumber = sanitizeFilename(invoice.invoice_number || 'INV-0001', 'INV');
+  const safeCustomer = sanitizeFilename(customer?.name || 'Customer', 'Customer');
   return `BillKaro_${safeNumber}_${safeCustomer}.pdf`;
 }
 
 /**
- * Generate PDF Blob & File object
+ * Generate PDF Blob & File object with authentic application/pdf MIME type
  */
 export async function generateInvoicePdfFile(
   invoice: Invoice,
@@ -28,8 +41,36 @@ export async function generateInvoicePdfFile(
   const doc = await generateInvoicePDF(invoice, business, customer);
   const blob = doc.output('blob');
   const fileName = getInvoicePdfFileName(invoice, customer);
-  const file = new File([blob], fileName, { type: 'application/pdf' });
+  const file = new File([blob], fileName, { 
+    type: 'application/pdf',
+    lastModified: Date.now()
+  });
   return { file, blob, fileName };
+}
+
+/**
+ * Trigger immediate browser download of the PDF file
+ */
+export async function downloadInvoicePDF(
+  invoice: Invoice,
+  business: BusinessProfile,
+  customer?: Customer
+): Promise<{ success: boolean; fileName: string; error?: string }> {
+  try {
+    const { blob, fileName } = await generateInvoicePdfFile(invoice, business, customer);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { success: true, fileName };
+  } catch (err: any) {
+    console.error('PDF download error:', err);
+    return { success: false, fileName: 'invoice.pdf', error: err?.message };
+  }
 }
 
 /**
@@ -63,7 +104,7 @@ export async function shareInvoicePDF(
         return {
           success: true,
           method: 'native_pdf_share',
-          message: 'Invoice PDF shared successfully via native share.'
+          message: 'Invoice PDF shared successfully.'
         };
       } catch (shareErr: any) {
         // If user cancelled the share sheet, return cleanly without error
@@ -71,7 +112,7 @@ export async function shareInvoicePDF(
           return {
             success: true,
             method: 'native_pdf_share',
-            message: 'Share cancelled by user.'
+            message: 'Share cancelled.'
           };
         }
         console.warn('Native share threw error, falling back:', shareErr);
@@ -106,7 +147,7 @@ export async function shareInvoicePDF(
     return {
       success: true,
       method: 'download_and_whatsapp_fallback',
-      message: 'PDF downloaded to your device. Attach this file in WhatsApp to send.'
+      message: 'Invoice PDF downloaded. Attach it in WhatsApp to send.'
     };
   } catch (err: any) {
     console.error('Invoice share failed:', err);

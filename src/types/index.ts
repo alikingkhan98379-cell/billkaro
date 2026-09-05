@@ -24,6 +24,35 @@ export interface BusinessProfile {
   updated_at?: string;
 }
 
+export interface Company {
+  id: string;
+  user_id: string;
+  name: string;
+  full_name?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  gstin?: string;
+  state?: string;
+  logo_url?: string;
+  bank_name?: string;
+  account_no?: string;
+  ifsc?: string;
+  signature_url?: string;
+  upi_id?: string;
+  terms_conditions?: string;
+  is_default?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CompanyLimitInfo {
+  maxCompanies: number;
+  currentCount: number;
+  isLimitReached: boolean;
+  planId: string;
+}
+
 export interface Customer {
   id: string;
   user_id: string;

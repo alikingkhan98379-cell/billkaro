@@ -16,17 +16,21 @@ import {
   Mail,
   MapPin,
   CheckCircle2,
-  Edit3
+  Edit3,
+  FileText,
+  CreditCard,
+  Percent,
+  CheckCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../context/AuthContext';
+import { useCompany } from '../context/CompanyContext';
 import { supabase } from '../lib/supabase';
-import { Customer, Product, Invoice, InvoiceItem, TaxType } from '../types';
+import { Customer, Product, Invoice, InvoiceItem, TaxType, BusinessProfile } from '../types';
 import { calculateInvoiceTotals } from '../utils/taxCalculator';
 import { formatINR, numberToIndianWords } from '../utils/currency';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
-import { openWhatsAppShare } from '../utils/whatsapp';
-import { shareInvoicePDF } from '../utils/shareService';
+import { shareInvoicePDF, downloadInvoicePDF } from '../utils/shareService';
 import { Modal } from '../components/common/Modal';
 import { isValidIndianPhone, isValidGSTIN, isValidEmail } from '../utils/validators';
 import { verifyGSTINWithBackend } from '../utils/gstinService';
@@ -41,6 +45,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
   onInvoiceCreated
 }) => {
   const { user, businessProfile, subscription } = useAuth();
+  const { activeCompany } = useCompany();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -79,6 +84,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
   const [customerModalOpen, setCustomerModalOpen] = useState<boolean>(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  const [savingAction, setSavingAction] = useState<'draft' | 'pdf' | 'share' | null>(null);
   const [modalSaving, setModalSaving] = useState<boolean>(false);
   const [fetchingGstInline, setFetchingGstInline] = useState<boolean>(false);
   const [fetchingGstModal, setFetchingGstModal] = useState<boolean>(false);
@@ -93,6 +99,8 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
   const [newCustGstin, setNewCustGstin] = useState<string>('');
   const [newCustAddress, setNewCustAddress] = useState<string>('');
   const [newCustState, setNewCustState] = useState<string>('Delhi');
+
+  const currentBusiness = activeCompany || businessProfile;
 
   useEffect(() => {
     if (!user) return;
@@ -206,9 +214,9 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
       if (res.data.state) setCustomerState(res.data.state);
       setIsManualCustomer(true);
       if (res.data.company_name) {
-        setGstSuccessMessage(`? GST Verified: ${res.data.company_name} details auto-filled!`);
+        setGstSuccessMessage(`✓ GST Verified: ${res.data.company_name} details auto-filled!`);
       } else {
-        setGstSuccessMessage(res.notice || `? State '${res.data.state}' auto-detected from GSTIN!`);
+        setGstSuccessMessage(res.notice || `✓ State '${res.data.state}' auto-detected from GSTIN!`);
       }
       setTimeout(() => setGstSuccessMessage(''), 6000);
     } else {
@@ -233,7 +241,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
       if (res.data.address) setNewCustAddress(res.data.address);
       if (res.data.state) setNewCustState(res.data.state);
       if (!res.data.company_name) {
-        setModalNoticeMessage(`? State '${res.data.state}' auto-detected! Note: Full Name & Address requires active API credits on gstincheck.co.in.`);
+        setModalNoticeMessage(`✓ State '${res.data.state}' auto-detected! Note: Full Name & Address requires active API credits.`);
       }
     } else {
       setModalErrorMessage(res.error || 'Could not fetch details, please enter manually.');
@@ -301,102 +309,80 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
       return;
     }
 
-    if (newCustPhone.trim() && !isValidIndianPhone(newCustPhone.trim())) {
-      setModalErrorMessage('Please enter a valid 10-digit Indian phone number (or leave blank).');
+    if (newCustPhone && !isValidIndianPhone(newCustPhone)) {
+      setModalErrorMessage('Please enter a valid 10-digit Indian phone number.');
       return;
     }
 
-    if (newCustGstin.trim() && !isValidGSTIN(newCustGstin.trim())) {
-      setModalErrorMessage('Please enter a valid 15-character GSTIN (e.g. 07AAAAA0000A1Z5) or leave blank.');
+    if (newCustGstin && !isValidGSTIN(newCustGstin)) {
+      setModalErrorMessage('Please enter a valid 15-character GSTIN format.');
       return;
     }
 
-    if (newCustEmail.trim() && !isValidEmail(newCustEmail.trim())) {
-      setModalErrorMessage('Please enter a valid email address (or leave blank).');
+    if (newCustEmail && !isValidEmail(newCustEmail)) {
+      setModalErrorMessage('Please enter a valid email address.');
       return;
     }
 
+    if (!user) return;
     setModalSaving(true);
     try {
-      const cleanPhone = newCustPhone.trim().replace(/[^0-9]/g, '');
-      const cleanGstin = newCustGstin.trim().toUpperCase();
+      const { data, error } = await supabase
+        .from('customers')
+        .insert({
+          user_id: user.id,
+          name: newCustName.trim(),
+          phone: newCustPhone.trim(),
+          email: newCustEmail.trim(),
+          gstin: newCustGstin.trim().toUpperCase(),
+          address: newCustAddress.trim(),
+          state: newCustState.trim() || 'Delhi'
+        })
+        .select()
+        .single();
 
-      if (user) {
-        const { data, error } = await supabase
-          .from('customers')
-          .insert({
-            user_id: user.id,
-            name: newCustName.trim(),
-            phone: cleanPhone,
-            email: newCustEmail.trim(),
-            gstin: cleanGstin,
-            address: newCustAddress.trim(),
-            state: newCustState.trim() || 'Delhi'
-          })
-          .select()
-          .single();
-
-        if (error) {
-          console.warn('Supabase customer insert notice:', error.message);
-          const localCust: Customer = {
-            id: 'temp_' + Date.now(),
-            user_id: user.id,
-            name: newCustName.trim(),
-            phone: cleanPhone,
-            email: newCustEmail.trim(),
-            gstin: cleanGstin,
-            address: newCustAddress.trim(),
-            state: newCustState.trim() || 'Delhi'
-          };
-          setCustomers(prev => [...prev, localCust]);
-          setSelectedCustomerId(localCust.id);
-          setCustomerName(localCust.name);
-          setCustomerPhone(localCust.phone);
-          setCustomerEmail(localCust.email);
-          setCustomerGstin(localCust.gstin);
-          setCustomerState(localCust.state);
-          setCustomerAddress(localCust.address);
-          setCustomerModalOpen(false);
-          return;
-        }
-
-        if (data) {
-          setCustomers(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
-          setSelectedCustomerId(data.id);
-          setCustomerName(data.name);
-          setCustomerPhone(data.phone || '');
-          setCustomerEmail(data.email || '');
-          setCustomerGstin(data.gstin || '');
-          setCustomerState(data.state || 'Delhi');
-          setCustomerAddress(data.address || '');
-          setCustomerModalOpen(false);
-        }
+      if (error) {
+        setModalErrorMessage(error.message);
+      } else if (data) {
+        setCustomers(prev => [...prev, data]);
+        setSelectedCustomerId(data.id);
+        setCustomerName(data.name);
+        setCustomerPhone(data.phone || '');
+        setCustomerEmail(data.email || '');
+        setCustomerGstin(data.gstin || '');
+        setCustomerState(data.state || 'Delhi');
+        setCustomerAddress(data.address || '');
+        setIsManualCustomer(false);
+        setCustomerModalOpen(false);
       }
     } catch (err: any) {
-      setModalErrorMessage(err?.message || 'Error saving customer. Please check your network.');
+      setModalErrorMessage(err.message || 'Failed to save customer');
     } finally {
       setModalSaving(false);
     }
   };
 
-  const handleSaveInvoice = async (action: 'save' | 'pdf' | 'whatsapp') => {
+  // Main Save / Share / Download Handler
+  const handleSaveInvoice = async (action: 'draft' | 'pdf' | 'share') => {
     setErrorMessage('');
 
     if (!invoiceNumber.trim()) {
-      setErrorMessage('Please enter an invoice number.');
+      setErrorMessage('Please provide an Invoice Number.');
       return;
     }
 
-    const validItems = items.filter(it => it.product_name.trim().length > 0);
+    const validItems = items.filter(it => it.product_name.trim());
     if (validItems.length === 0) {
-      setErrorMessage('Please add at least one line item with a name.');
+      setErrorMessage('Please add at least one line item with a name and price.');
       return;
     }
 
     setSaving(true);
+    setSavingAction(action);
+
     try {
       const activeCustomerObject: Customer = {
-        id: selectedCustomerId && !selectedCustomerId.startsWith('temp_') ? selectedCustomerId : 'adhoc',
+        id: selectedCustomerId || 'adhoc',
         user_id: user?.id || 'guest',
         name: customerName.trim() || 'Cash Customer',
         phone: customerPhone.trim(),
@@ -430,29 +416,37 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
         igst: totals.igst,
         discount: totals.discountAmount,
         grand_total: totals.grandTotal,
-        status: 'UNPAID',
+        status: action === 'draft' ? 'UNPAID' : 'PAID',
         notes: notes.trim(),
         items: lineItemsPayload,
         customer: activeCustomerObject
       };
 
+      const businessToUse: BusinessProfile = {
+        id: currentBusiness?.id || 'default',
+        user_id: user?.id || 'guest',
+        name: currentBusiness?.name || 'My Business',
+        address: currentBusiness?.address || '',
+        phone: currentBusiness?.phone || '',
+        email: currentBusiness?.email || '',
+        gstin: currentBusiness?.gstin || '',
+        logo_url: currentBusiness?.logo_url || '',
+        bank_name: currentBusiness?.bank_name || '',
+        account_no: currentBusiness?.account_no || '',
+        ifsc: currentBusiness?.ifsc || '',
+        signature_url: currentBusiness?.signature_url || '',
+        upi_id: currentBusiness?.upi_id || '',
+        terms_conditions: currentBusiness?.terms_conditions || ''
+      };
+
       // 1. PDF Download
-      if (action === 'pdf' && businessProfile) {
-        try {
-          const doc = await generateInvoicePDF(fullInvoice, businessProfile, activeCustomerObject);
-          doc.save(`${fullInvoice.invoice_number}_${activeCustomerObject.name}.pdf`);
-        } catch (pdfErr) {
-          console.error('PDF Generation note:', pdfErr);
-        }
+      if (action === 'pdf') {
+        await downloadInvoicePDF(fullInvoice, businessToUse, activeCustomerObject);
       }
 
       // 2. WhatsApp / Native PDF Share
-      if (action === 'whatsapp' && businessProfile) {
-        try {
-          await shareInvoicePDF(fullInvoice, businessProfile, activeCustomerObject);
-        } catch (waErr) {
-          console.error('Invoice share note:', waErr);
-        }
+      if (action === 'share') {
+        await shareInvoicePDF(fullInvoice, businessToUse, activeCustomerObject);
       }
 
       // 3. Database Persistence
@@ -501,20 +495,17 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             igst: totals.igst,
             discount: totals.discountAmount,
             grand_total: totals.grandTotal,
-            status: 'UNPAID',
+            status: action === 'draft' ? 'UNPAID' : 'PAID',
             notes: notes.trim()
           })
           .select()
           .single();
 
         if (invError) {
-          console.warn('Database save warning:', invError.message);
-          if (invError.message.includes('row-level security') || invError.message.includes('policy')) {
-            setErrorMessage('Your login session had expired or URL token was invalidated. Your PDF/WhatsApp was generated successfully! Please log in again to sync cloud history.');
-          } else {
-            setErrorMessage(invError.message);
-          }
+          console.warn('Database save note:', invError.message);
+          setErrorMessage(invError.message);
           setSaving(false);
+          setSavingAction(null);
           return;
         }
 
@@ -532,7 +523,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
           await supabase.from('invoice_items').insert(dbItems);
 
           try {
-            confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+            confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
           } catch (e) {}
 
           if (onInvoiceCreated) onInvoiceCreated();
@@ -544,52 +535,56 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
       setErrorMessage(err?.message || 'Invoice processed.');
     } finally {
       setSaving(false);
+      setSavingAction(null);
     }
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6 pb-24 lg:pb-8">
+      {/* Top Header Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setCurrentTab('invoices')}
-            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Back to Invoices"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-              Create GST Tax Invoice
+              Create GST Invoice
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Auto-calculates GST breakdown and generates UPI payment QR code
+              Billing for <strong className="text-blue-600 dark:text-blue-400">{currentBusiness?.name || 'Your Business'}</strong>
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Desktop Top Action Hierarchy */}
+        <div className="hidden sm:flex items-center gap-2">
           <button
             disabled={saving}
-            onClick={() => handleSaveInvoice('save')}
+            onClick={() => handleSaveInvoice('draft')}
             className="px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 font-bold text-xs rounded-xl shadow-xs transition cursor-pointer min-h-[44px]"
           >
-            Save Draft
+            {savingAction === 'draft' ? 'Saving Draft...' : 'Save Draft'}
           </button>
           <button
             disabled={saving}
             onClick={() => handleSaveInvoice('pdf')}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer min-h-[44px]"
+            className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 font-bold text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer min-h-[44px]"
           >
-            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Save & Download PDF
+            {savingAction === 'pdf' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            <span>Download PDF</span>
           </button>
           <button
             disabled={saving}
-            onClick={() => handleSaveInvoice('whatsapp')}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer min-h-[44px]"
+            onClick={() => handleSaveInvoice('share')}
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer min-h-[44px]"
           >
-            <Share2 className="w-4 h-4" />
-            WhatsApp Share
+            {savingAction === 'share' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+            <span>Save & WhatsApp PDF</span>
           </button>
         </div>
       </div>
@@ -608,444 +603,527 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
         </div>
       )}
 
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-6 sm:p-8 space-y-8 transition-colors">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-5 bg-slate-50/70 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Invoice Number
-            </label>
-            <input
-              type="text"
-              required
-              value={invoiceNumber}
-              onChange={e => setInvoiceNumber(e.target.value)}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Invoice Date
-            </label>
-            <input
-              type="date"
-              required
-              value={invoiceDate}
-              onChange={e => setInvoiceDate(e.target.value)}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Due Date (Optional)
-            </label>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={e => setDueDate(e.target.value)}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Tax Mechanism
-            </label>
-            <select
-              value={taxType}
-              onChange={e => setTaxType(e.target.value as TaxType)}
-              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            >
-              <option value="CGST_SGST">Intra-State (CGST + SGST)</option>
-              <option value="IGST">Inter-State (IGST)</option>
-              <option value="NONE">Non-GST / Exempt (0%)</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Bill To (Customer Information)
-              </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">Pick from directory or type directly on the invoice</p>
+      {/* 2-Column Responsive Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        {/* LEFT 2-COLUMNS: SECTIONS 1 TO 5 */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* SECTION 1: INVOICE DETAILS */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">1</span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Invoice Details</h3>
             </div>
-            
-            <div className="flex items-center gap-2">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Invoice Number *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={invoiceNumber}
+                  onChange={e => setInvoiceNumber(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Invoice Date *
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={invoiceDate}
+                  onChange={e => setInvoiceDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Due Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={e => setDueDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tax Mechanism
+                </label>
+                <select
+                  value={taxType}
+                  onChange={e => setTaxType(e.target.value as TaxType)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                >
+                  <option value="CGST_SGST">Intra-State (CGST + SGST)</option>
+                  <option value="IGST">Inter-State (IGST)</option>
+                  <option value="NONE">Exempt / Non-GST (0%)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: CUSTOMER INFORMATION */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">2</span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Customer Information</h3>
+              </div>
+
               <button
                 type="button"
                 onClick={handleOpenCustomerModal}
                 className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-blue-200/60 dark:border-blue-800/60 cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>+ Add to Directory</span>
+                <span>+ Add Customer</span>
               </button>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Select from Directory
-              </label>
-              <select
-                value={selectedCustomerId}
-                onChange={e => handleSelectCustomerFromDropdown(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
-              >
-                <option value="">-- Manual / Walk-in Customer --</option>
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.phone ? `(${c.phone})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Customer / Firm Name *
-              </label>
-              <input
-                type="text"
-                required
-                value={customerName}
-                onChange={e => {
-                  setCustomerName(e.target.value);
-                  setIsManualCustomer(true);
-                }}
-                placeholder="e.g. Ramesh Trading Co. or Cash Customer"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Phone Number (WhatsApp)
-              </label>
-              <input
-                type="text"
-                value={customerPhone}
-                onChange={e => {
-                  setCustomerPhone(e.target.value);
-                  setIsManualCustomer(true);
-                }}
-                placeholder="9876543210"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-slate-700 dark:text-slate-300 text-xs">Customer GSTIN</label>
-                <button
-                  type="button"
-                  disabled={fetchingGstInline || !customerGstin}
-                  onClick={handleFetchGstInline}
-                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:opacity-40 transition cursor-pointer flex items-center gap-1"
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Select from Directory
+                </label>
+                <select
+                  value={selectedCustomerId}
+                  onChange={e => handleSelectCustomerFromDropdown(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
                 >
-                  {fetchingGstInline ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
-                  <span>{fetchingGstInline ? 'Verifying...' : '⚡ Auto-Fill from GST'}</span>
-                </button>
+                  <option value="">-- Type Walk-in / Manual Customer --</option>
+                  {customers.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.phone ? `(${c.phone})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <input
-                type="text"
-                maxLength={15}
-                value={customerGstin}
-                onChange={e => {
-                  setCustomerGstin(e.target.value.toUpperCase());
-                  setIsManualCustomer(true);
-                }}
-                placeholder="07AAAAA0000A1Z5"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Place of Supply / State
-              </label>
-              <input
-                type="text"
-                value={customerState}
-                onChange={e => {
-                  setCustomerState(e.target.value);
-                  setIsManualCustomer(true);
-                }}
-                placeholder="e.g. Delhi or Maharashtra"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
-              />
-            </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Customer / Business Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customerName}
+                  onChange={e => {
+                    setCustomerName(e.target.value);
+                    setIsManualCustomer(true);
+                  }}
+                  placeholder="e.g. Ramesh Trading Co. or Cash Customer"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Billing Address
-              </label>
-              <input
-                type="text"
-                value={customerAddress}
-                onChange={e => {
-                  setCustomerAddress(e.target.value);
-                  setIsManualCustomer(true);
-                }}
-                placeholder="Shop / House No, City, Pincode"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
-              />
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Phone (WhatsApp)
+                </label>
+                <input
+                  type="text"
+                  value={customerPhone}
+                  onChange={e => {
+                    setCustomerPhone(e.target.value);
+                    setIsManualCustomer(true);
+                  }}
+                  placeholder="9876543210"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">Customer GSTIN</label>
+                  <button
+                    type="button"
+                    disabled={fetchingGstInline || !customerGstin}
+                    onClick={handleFetchGstInline}
+                    className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 disabled:opacity-40 flex items-center gap-1 cursor-pointer"
+                  >
+                    {fetchingGstInline ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+                    <span>{fetchingGstInline ? 'Verifying...' : '⚡ Fetch Details'}</span>
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  maxLength={15}
+                  value={customerGstin}
+                  onChange={e => {
+                    setCustomerGstin(e.target.value.toUpperCase());
+                    setIsManualCustomer(true);
+                  }}
+                  placeholder="07AAAAA0000A1Z5"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Place of Supply (State)
+                </label>
+                <input
+                  type="text"
+                  value={customerState}
+                  onChange={e => {
+                    setCustomerState(e.target.value);
+                    setIsManualCustomer(true);
+                  }}
+                  placeholder="Delhi"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Billing Address
+                </label>
+                <input
+                  type="text"
+                  value={customerAddress}
+                  onChange={e => {
+                    setCustomerAddress(e.target.value);
+                    setIsManualCustomer(true);
+                  }}
+                  placeholder="Shop No., Market, City"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                />
+              </div>
             </div>
           </div>
 
-          {!selectedCustomerId && customerName && customerName !== 'Cash Customer' && (
-            <label className="inline-flex items-center gap-2 cursor-pointer pt-1 text-xs text-blue-700 dark:text-blue-400 font-semibold">
-              <input
-                type="checkbox"
-                checked={saveToDirectory}
-                onChange={e => setSaveToDirectory(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded border-slate-300 dark:border-slate-700 focus:ring-blue-500"
-              />
-              <span>Save this customer to my directory for future invoices</span>
-            </label>
-          )}
-        </div>
+          {/* SECTION 3: LINE ITEMS TABLE */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">3</span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Items & Products</h3>
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Auto-calculates rate & GST</span>
+            </div>
 
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Line Items & Products</h3>
-            <span className="text-xs text-slate-500 dark:text-slate-400">Pick from products master or type manually</span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[700px]">
-              <thead>
-                <tr className="bg-slate-100/75 dark:bg-slate-800/60 text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
-                  <th className="py-2.5 px-3 w-10 text-center">#</th>
-                  <th className="py-2.5 px-3">Item / Description</th>
-                  <th className="py-2.5 px-3 w-28">HSN/SAC</th>
-                  <th className="py-2.5 px-3 w-24">Qty</th>
-                  <th className="py-2.5 px-3 w-24">Unit</th>
-                  <th className="py-2.5 px-3 w-28">Price (₹)</th>
-                  <th className="py-2.5 px-3 w-24">GST %</th>
-                  <th className="py-2.5 px-3 w-28 text-right">Amount (₹)</th>
-                  <th className="py-2.5 px-2 w-10 text-center"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-200">
-                {items.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-2.5 px-3 text-center text-slate-400 dark:text-slate-500 font-mono">{idx + 1}</td>
-                    <td className="py-2.5 px-3">
-                      <div className="space-y-1">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[650px]">
+                <thead>
+                  <tr className="bg-slate-100/75 dark:bg-slate-800/60 text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                    <th className="py-2.5 px-2.5 w-8 text-center">#</th>
+                    <th className="py-2.5 px-2.5">Item Description</th>
+                    <th className="py-2.5 px-2.5 w-24">HSN/SAC</th>
+                    <th className="py-2.5 px-2.5 w-20">Qty</th>
+                    <th className="py-2.5 px-2.5 w-20">Unit</th>
+                    <th className="py-2.5 px-2.5 w-24">Rate (₹)</th>
+                    <th className="py-2.5 px-2.5 w-20">GST %</th>
+                    <th className="py-2.5 px-2.5 w-24 text-right">Total (₹)</th>
+                    <th className="py-2.5 px-1.5 w-8 text-center"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                  {items.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                      <td className="py-2 px-2 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                      <td className="py-2 px-2">
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            required
+                            placeholder="Product or Service Name"
+                            value={item.product_name}
+                            onChange={e => handleItemChange(idx, 'product_name', e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-blue-600"
+                          />
+                          {products.length > 0 && (
+                            <select
+                              onChange={e => handleSelectProduct(idx, e.target.value)}
+                              defaultValue=""
+                              className="w-full text-[10px] text-slate-500 dark:text-slate-400 bg-transparent border-0 focus:ring-0 p-0 cursor-pointer"
+                            >
+                              <option value="" disabled>⚡ Autofill from product catalog...</option>
+                              {products.map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} - ₹{p.price} ({p.gst_percent}%)
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2 px-2">
                         <input
                           type="text"
-                          required
-                          placeholder="e.g. Cotton Shirt or Web Development"
-                          value={item.product_name}
-                          onChange={e => handleItemChange(idx, 'product_name', e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                          placeholder="6109"
+                          value={item.hsn_code}
+                          onChange={e => handleItemChange(idx, 'hsn_code', e.target.value)}
+                          className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-center text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800"
                         />
-                        {products.length > 0 && (
-                          <select
-                            onChange={e => handleSelectProduct(idx, e.target.value)}
-                            defaultValue=""
-                            className="w-full text-[10px] text-slate-500 dark:text-slate-400 bg-transparent border-0 focus:ring-0 p-0 cursor-pointer"
-                          >
-                            <option value="" disabled className="dark:bg-slate-800 dark:text-slate-300">⚡ Autofill from product master...</option>
-                            {products.map(p => (
-                              <option key={p.id} value={p.id} className="dark:bg-slate-800 dark:text-slate-200">
-                                {p.name} - ₹{p.price} ({p.gst_percent}%)
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <input
-                        type="text"
-                        placeholder="6109"
-                        value={item.hsn_code}
-                        onChange={e => handleItemChange(idx, 'hsn_code', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-center text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="any"
-                        value={item.qty}
-                        onChange={e => handleItemChange(idx, 'qty', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <select
-                        value={item.unit}
-                        onChange={e => handleItemChange(idx, 'unit', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      >
-                        <option value="PCS">PCS</option>
-                        <option value="NOS">NOS</option>
-                        <option value="KG">KG</option>
-                        <option value="MTR">MTR</option>
-                        <option value="BOX">BOX</option>
-                        <option value="SET">SET</option>
-                        <option value="LTR">LTR</option>
-                        <option value="BAG">BAG</option>
-                        <option value="HRS">HRS</option>
-                        <option value="SQFT">SQFT</option>
-                        <option value="DOZ">DOZ</option>
-                      </select>
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={item.price}
-                        onChange={e => handleItemChange(idx, 'price', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-right text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      />
-                    </td>
-                    <td className="py-2.5 px-3">
-                      <select
-                        value={item.gst_percent}
-                        onChange={e => handleItemChange(idx, 'gst_percent', Number(e.target.value))}
-                        className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-1 focus:ring-blue-600 focus:outline-none"
-                      >
-                        <option value="0">0%</option>
-                        <option value="5">5%</option>
-                        <option value="12">12%</option>
-                        <option value="18">18%</option>
-                        <option value="28">28%</option>
-                      </select>
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-bold text-slate-900 dark:text-white">
-                      {formatINR(item.amount)}
-                    </td>
-                    <td className="py-2.5 px-2 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveItemRow(idx)}
-                        disabled={items.length <= 1}
-                        className="text-slate-300 dark:text-slate-600 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-30 transition p-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                      <td className="py-2 px-2">
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="any"
+                          value={item.qty}
+                          onChange={e => handleItemChange(idx, 'qty', e.target.value)}
+                          className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800"
+                        />
+                      </td>
+                      <td className="py-2 px-2">
+                        <select
+                          value={item.unit}
+                          onChange={e => handleItemChange(idx, 'unit', e.target.value)}
+                          className="w-full px-1.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-900 dark:text-slate-100"
+                        >
+                          <option value="PCS">PCS</option>
+                          <option value="NOS">NOS</option>
+                          <option value="KG">KG</option>
+                          <option value="MTR">MTR</option>
+                          <option value="BOX">BOX</option>
+                          <option value="SET">SET</option>
+                          <option value="LTR">LTR</option>
+                          <option value="BAG">BAG</option>
+                          <option value="HRS">HRS</option>
+                          <option value="SQFT">SQFT</option>
+                          <option value="DOZ">DOZ</option>
+                        </select>
+                      </td>
+                      <td className="py-2 px-2">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={item.price}
+                          onChange={e => handleItemChange(idx, 'price', e.target.value)}
+                          className="w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-right text-slate-900 dark:text-slate-100"
+                        />
+                      </td>
+                      <td className="py-2 px-2">
+                        <select
+                          value={item.gst_percent}
+                          onChange={e => handleItemChange(idx, 'gst_percent', Number(e.target.value))}
+                          className="w-full px-1.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-slate-900 dark:text-slate-100"
+                        >
+                          <option value="0">0%</option>
+                          <option value="5">5%</option>
+                          <option value="12">12%</option>
+                          <option value="18">18%</option>
+                          <option value="28">28%</option>
+                        </select>
+                      </td>
+                      <td className="py-2 px-2 text-right font-bold text-slate-900 dark:text-white">
+                        {formatINR(item.amount)}
+                      </td>
+                      <td className="py-2 px-1 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItemRow(idx)}
+                          disabled={items.length <= 1}
+                          className="text-slate-300 dark:text-slate-600 hover:text-rose-600 disabled:opacity-30 transition p-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAddItemRow}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 rounded-xl transition cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Another Item Row</span>
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={handleAddItemRow}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-xl transition cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Another Item</span>
-          </button>
+          {/* SECTION 4 & 5: NOTES & DISCOUNT */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+              <span className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold">4</span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Discount & Terms</h3>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Invoice Notes / Terms & Conditions
+                </label>
+                <textarea
+                  rows={3}
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder="e.g. Thanks for your business! Goods once sold will not be taken back."
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col justify-center space-y-2">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Bill Discount</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    value={discountValue}
+                    onChange={e => setDiscountValue(Number(e.target.value) || 0)}
+                    placeholder="0"
+                    className="flex-1 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-slate-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDiscountIsPercentage(!discountIsPercentage)}
+                    className="px-3 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl hover:bg-slate-300 transition cursor-pointer min-h-[38px]"
+                  >
+                    {discountIsPercentage ? '% Percent' : '₹ Amount'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                Invoice Notes & Terms (Optional)
-              </label>
-              <textarea
-                rows={3}
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                placeholder="e.g. Thanks for your business! Payment due within 15 days."
-                className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-              />
-            </div>
-
-            <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-4">
-              <div>
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Apply Discount</span>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">Deducted before tax calculation</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  value={discountValue}
-                  onChange={e => setDiscountValue(Number(e.target.value) || 0)}
-                  className="w-24 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-right text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-600"
-                />
-                <button
-                  type="button"
-                  onClick={() => setDiscountIsPercentage(!discountIsPercentage)}
-                  className="px-2.5 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition cursor-pointer"
-                >
-                  {discountIsPercentage ? '%' : '₹'}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800 space-y-3">
-            <div className="flex justify-between text-xs text-slate-600 dark:text-slate-300">
-              <span>Subtotal:</span>
-              <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.subtotal)}</span>
-            </div>
-
-            {totals.discountAmount > 0 && (
-              <div className="flex justify-between text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-                <span>Discount Applied:</span>
-                <span>- {formatINR(totals.discountAmount)}</span>
-              </div>
-            )}
-
-            {taxType === 'CGST_SGST' ? (
-              <>
-                <div className="flex justify-between text-xs text-slate-600 dark:text-slate-300">
-                  <span>CGST (Central Tax):</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.cgst)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-slate-600 dark:text-slate-300">
-                  <span>SGST (State Tax):</span>
-                  <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.sgst)}</span>
-                </div>
-              </>
-            ) : taxType === 'IGST' ? (
-              <div className="flex justify-between text-xs text-slate-600 dark:text-slate-300">
-                <span>IGST (Integrated Tax):</span>
-                <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.igst)}</span>
-              </div>
-            ) : (
-              <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500 italic">
-                <span>GST Tax:</span>
-                <span>Exempt / Zero Rated</span>
-              </div>
-            )}
-
-            {totals.roundOff !== 0 && (
-              <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
-                <span>Round Off:</span>
-                <span>{totals.roundOff > 0 ? `+${totals.roundOff}` : totals.roundOff}</span>
-              </div>
-            )}
-
-            <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
-              <span className="text-sm font-black text-slate-900 dark:text-white">Grand Total:</span>
-              <span className="text-xl font-black text-blue-600 dark:text-blue-400 font-mono">
-                {formatINR(totals.grandTotal)}
+        {/* RIGHT 1-COLUMN: SECTION 6 - LIVE INVOICE SUMMARY & ACTION CARD */}
+        <div className="space-y-4 lg:sticky lg:top-24">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 shadow-md space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <span>Invoice Summary</span>
+              </h3>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                {taxType}
               </span>
             </div>
 
-            <div className="pt-2 text-[11px] text-slate-500 dark:text-slate-400 font-medium italic">
-              {numberToIndianWords(totals.grandTotal)}
+            <div className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
+              <div className="flex justify-between">
+                <span>Items Subtotal:</span>
+                <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.subtotal)}</span>
+              </div>
+
+              {totals.discountAmount > 0 && (
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span>Discount:</span>
+                  <span>- {formatINR(totals.discountAmount)}</span>
+                </div>
+              )}
+
+              {taxType === 'CGST_SGST' ? (
+                <>
+                  <div className="flex justify-between">
+                    <span>CGST:</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.cgst)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>SGST:</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.sgst)}</span>
+                  </div>
+                </>
+              ) : taxType === 'IGST' ? (
+                <div className="flex justify-between">
+                  <span>IGST:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{formatINR(totals.igst)}</span>
+                </div>
+              ) : null}
+
+              {totals.roundOff !== 0 && (
+                <div className="flex justify-between text-slate-500">
+                  <span>Round Off:</span>
+                  <span>{totals.roundOff > 0 ? `+${totals.roundOff}` : totals.roundOff}</span>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                <span className="text-sm font-black text-slate-900 dark:text-white">Grand Total:</span>
+                <span className="text-xl font-black text-blue-600 dark:text-blue-400 font-mono">
+                  {formatINR(totals.grandTotal)}
+                </span>
+              </div>
+
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 italic pt-1 leading-snug">
+                {numberToIndianWords(totals.grandTotal)}
+              </p>
+            </div>
+
+            {/* Main Action Buttons */}
+            <div className="pt-3 space-y-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => handleSaveInvoice('share')}
+                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer min-h-[44px]"
+              >
+                {savingAction === 'share' ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Share2 className="w-4 h-4" />
+                )}
+                <span>{savingAction === 'share' ? 'Preparing PDF...' : 'Save & WhatsApp PDF'}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => handleSaveInvoice('pdf')}
+                className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold rounded-xl transition flex items-center justify-center gap-2 cursor-pointer min-h-[44px]"
+              >
+                {savingAction === 'pdf' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span>Save & Download PDF</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => handleSaveInvoice('draft')}
+                className="w-full py-2.5 px-4 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer min-h-[38px]"
+              >
+                {savingAction === 'draft' ? 'Saving...' : 'Save as Draft (Unpaid)'}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
+      {/* MOBILE FIXED BOTTOM ACTION BAR */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 p-3 shadow-2xl flex items-center justify-between gap-3">
+        <div>
+          <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Total</span>
+          <span className="text-base font-black text-blue-600 dark:text-blue-400 font-mono">
+            {formatINR(totals.grandTotal)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => handleSaveInvoice('draft')}
+            className="px-3 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl min-h-[44px]"
+          >
+            Draft
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => handleSaveInvoice('share')}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 min-h-[44px]"
+          >
+            {savingAction === 'share' ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+            <span>Save & Share</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Add Customer Modal */}
       <Modal
         isOpen={customerModalOpen}
         onClose={() => setCustomerModalOpen(false)}
@@ -1059,13 +1137,6 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             </div>
           )}
 
-          {modalNoticeMessage && (
-            <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-[11px] rounded-xl flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>{modalNoticeMessage}</span>
-            </div>
-          )}
-
           <div>
             <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Customer / Business Name *</label>
             <input
@@ -1074,7 +1145,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
               value={newCustName}
               onChange={e => setNewCustName(e.target.value)}
               placeholder="e.g. Acme Trading Co."
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-slate-100"
             />
           </div>
 
@@ -1086,7 +1157,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
                 value={newCustPhone}
                 onChange={e => setNewCustPhone(e.target.value)}
                 placeholder="9876543210"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
               />
             </div>
             <div>
@@ -1096,7 +1167,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
                   type="button"
                   disabled={fetchingGstModal || !newCustGstin}
                   onClick={handleFetchGstModal}
-                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 disabled:opacity-40 transition cursor-pointer flex items-center gap-1"
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 disabled:opacity-40 flex items-center gap-1 cursor-pointer"
                 >
                   {fetchingGstModal ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
                   <span>{fetchingGstModal ? 'Verifying...' : '⚡ Fetch'}</span>
@@ -1108,7 +1179,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
                 value={newCustGstin}
                 onChange={e => setNewCustGstin(e.target.value.toUpperCase())}
                 placeholder="07AAAAA0000A1Z5"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -1121,17 +1192,17 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
                 value={newCustEmail}
                 onChange={e => setNewCustEmail(e.target.value)}
                 placeholder="customer@email.com"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
               />
             </div>
             <div>
-              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Place of Supply / State</label>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">State / Province</label>
               <input
                 type="text"
                 value={newCustState}
                 onChange={e => setNewCustState(e.target.value)}
-                placeholder="e.g. Maharashtra"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+                placeholder="Delhi"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
               />
             </div>
           </div>
@@ -1143,7 +1214,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
               value={newCustAddress}
               onChange={e => setNewCustAddress(e.target.value)}
               placeholder="Shop No 12, Main Market..."
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-2 focus:ring-blue-600"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
             />
           </div>
 
@@ -1151,21 +1222,22 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             <button
               type="button"
               onClick={() => setCustomerModalOpen(false)}
-              className="flex-1 py-2 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer min-h-[40px]"
+              className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-slate-200"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={modalSaving}
-              className="flex-1 py-2 font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer min-h-[40px]"
+              className="flex-1 py-2.5 font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl disabled:opacity-50"
             >
-              {modalSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Save Customer'}
+              {modalSaving ? 'Saving...' : 'Save Customer'}
             </button>
           </div>
         </form>
       </Modal>
 
+      {/* Monthly Limit Upgrade Modal */}
       <Modal
         isOpen={upgradeModalOpen}
         onClose={() => setUpgradeModalOpen(false)}
@@ -1176,15 +1248,15 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
             <Sparkles className="w-6 h-6" />
           </div>
           <h4 className="text-base font-bold text-slate-900 dark:text-white">
-            You have reached the 5 Free Invoices limit for this month
+            You've reached the 5 free invoices limit for this month
           </h4>
-          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            Upgrade to BillKaro Pro starting at just <strong className="text-slate-900 dark:text-white">₹49/month</strong> or <strong className="text-slate-900 dark:text-white">₹470/year</strong> to generate Unlimited Invoices, enable Custom Logo & Digital Signature, and 100% Ad-Free Billing.
+          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-sm mx-auto">
+            Upgrade to BillKaro Pro starting at just <strong className="text-slate-900 dark:text-white">₹49/month</strong> or <strong className="text-slate-900 dark:text-white">₹470/year</strong> to generate unlimited invoices, unlock multi-company management, custom logo & signature, and 100% ad-free billing.
           </p>
           <div className="flex gap-3 pt-3">
             <button
               onClick={() => setUpgradeModalOpen(false)}
-              className="flex-1 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition cursor-pointer min-h-[44px]"
+              className="flex-1 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-xl cursor-pointer min-h-[44px]"
             >
               Continue on Free
             </button>
@@ -1193,7 +1265,7 @@ export const InvoiceCreatePage: React.FC<InvoiceCreatePageProps> = ({
                 setUpgradeModalOpen(false);
                 setCurrentTab('premium');
               }}
-              className="flex-1 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl transition shadow-md cursor-pointer min-h-[44px]"
+              className="flex-1 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl shadow-md cursor-pointer min-h-[44px]"
             >
               Upgrade to Pro (From ₹49)
             </button>

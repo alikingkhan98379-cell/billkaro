@@ -6,20 +6,29 @@ import {
   Clock, 
   PlusCircle, 
   Users, 
+  Package, 
   Sparkles,
   ArrowUpRight,
   ShieldCheck,
   RefreshCw,
   Download,
-  Share2
+  Share2,
+  Building2,
+  AlertCircle,
+  ChevronRight,
+  Percent,
+  CheckCircle2,
+  Plus
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useCompany } from '../context/CompanyContext';
 import { supabase } from '../lib/supabase';
 import { Invoice } from '../types';
 import { formatINR } from '../utils/currency';
 import { Badge } from '../components/common/Badge';
 import { generateInvoicePDF } from '../utils/pdfGenerator';
 import { shareInvoicePDF } from '../utils/shareService';
+import { CompanySwitcher } from '../components/common/CompanySwitcher';
 
 interface DashboardPageProps {
   setCurrentTab: (tab: any) => void;
@@ -27,13 +36,17 @@ interface DashboardPageProps {
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) => {
-  const { user, businessProfile, subscription, isPremium } = useAuth();
+  const { user, businessProfile, isPremium, planId } = useAuth();
+  const { activeCompany, companies, currentCount, maxCompanies } = useCompany();
+
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [customersCount, setCustomersCount] = useState<number>(0);
   const [productsCount, setProductsCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
+  const [dismissedOnboarding, setDismissedOnboarding] = useState<boolean>(false);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
 
   const fetchDashboardData = async () => {
     if (!user) return;
@@ -82,8 +95,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
     .filter(inv => inv.status === 'PAID')
     .reduce((acc, inv) => acc + (Number(inv.grand_total) || 0), 0);
   const totalPending = invoices
-    .filter(inv => inv.status === 'UNPAID' || inv.status === 'OVERDUE')
+    .filter(inv => inv.status === 'UNPAID' || inv.status === 'OVERDUE' || inv.status === 'PARTIAL')
     .reduce((acc, inv) => acc + (Number(inv.grand_total) || 0), 0);
+  const totalGst = invoices.reduce(
+    (acc, inv) => acc + (Number(inv.cgst || 0) + Number(inv.sgst || 0) + Number(inv.igst || 0)), 
+    0
+  );
 
   // Free Tier Monthly Limit Check (5 invoices per calendar month)
   const currentMonth = new Date().getMonth();
@@ -94,12 +111,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
   });
   const monthlyInvoicesCount = currentMonthInvoices.length;
 
+  // Profile Completion Score Calculation
+  const currentProfile = activeCompany || businessProfile;
+  const isProfileConfigured = Boolean(
+    currentProfile && 
+    currentProfile.name && 
+    currentProfile.name !== 'My Business' && 
+    (currentProfile.phone || currentProfile.gstin || currentProfile.address)
+  );
+
+  const calculateCompletionPercentage = () => {
+    if (!currentProfile) return 0;
+    let score = 0;
+    if (currentProfile.name && currentProfile.name !== 'My Business') score += 25;
+    if (currentProfile.phone) score += 15;
+    if (currentProfile.email) score += 15;
+    if (currentProfile.gstin) score += 20;
+    if (currentProfile.address) score += 15;
+    if (currentProfile.bank_name || currentProfile.upi_id) score += 10;
+    return score;
+  };
+
+  const completionPercentage = calculateCompletionPercentage();
+
   const handleDownloadPDF = async (inv: Invoice) => {
     if (!businessProfile) return;
     setDownloadingId(inv.id);
+    setShareNotice(null);
     try {
       const doc = await generateInvoicePDF(inv, businessProfile, inv.customer);
-      doc.save(`${inv.invoice_number}_${inv.customer?.name || 'Invoice'}.pdf`);
+      const safeCustomer = (inv.customer?.name || 'Customer').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeNumber = (inv.invoice_number || 'INV').replace(/[^a-zA-Z0-9_-]/g, '_');
+      doc.save(`BillKaro_${safeNumber}_${safeCustomer}.pdf`);
+      setShareNotice('Invoice PDF downloaded successfully.');
+      setTimeout(() => setShareNotice(null), 4000);
     } catch (e) {
       console.error('PDF error:', e);
     } finally {
@@ -110,8 +155,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
   const handleShare = async (inv: Invoice) => {
     if (!businessProfile) return;
     setSharingId(inv.id);
+    setShareNotice(null);
     try {
-      await shareInvoicePDF(inv, businessProfile, inv.customer);
+      const res = await shareInvoicePDF(inv, businessProfile, inv.customer);
+      setShareNotice(res.message);
+      setTimeout(() => setShareNotice(null), 5000);
     } catch (e) {
       console.error('Share error:', e);
     } finally {
@@ -136,69 +184,160 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
 
   return (
     <div className="space-y-6">
-      {/* Top Welcome Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 rounded-3xl p-5 sm:p-8 text-white shadow-xl">
-        <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold border border-white/15">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-            <span>Encrypted GST Suite</span>
+      {/* Toast Notice */}
+      {shareNotice && (
+        <div className="p-3 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 text-xs rounded-2xl flex items-center justify-between shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="font-semibold">{shareNotice}</span>
           </div>
-          <h2 className="text-xl sm:text-3xl font-black tracking-tight">
-            {businessProfile?.name || 'Welcome to BillKaro'}
-          </h2>
-          <p className="text-xs sm:text-sm text-blue-100 max-w-xl">
-            Create professional GST tax invoices with instant UPI payment QR codes, auto-calculations, and 1-click WhatsApp sharing.
-          </p>
+          <button onClick={() => setShareNotice(null)} className="text-blue-400 hover:text-blue-600 text-sm">✕</button>
         </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => setCurrentTab('create-invoice')}
-            className="px-5 py-3 bg-white text-blue-700 hover:bg-blue-50 text-xs sm:text-sm font-bold rounded-2xl shadow-lg hover:shadow-xl transition active:scale-98 flex items-center gap-2 cursor-pointer min-h-[44px]"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Create Invoice</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Monthly Plan Quota Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4 transition-colors">
-        <div className="flex items-center gap-3.5 w-full sm:w-auto">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shrink-0">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                Plan Status: {isPremium ? 'BillKaro Pro (Ads OFF)' : 'Free Starter'}
-              </span>
-              <Badge status={isPremium ? 'PREMIUM' : 'FREE'} size="sm" />
+      {/* 1. TOP HERO SECTION: ONBOARDING CARD OR COMMERCIAL IDENTITY */}
+      {!isProfileConfigured && !dismissedOnboarding ? (
+        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 border border-white/10">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-[11px] font-bold tracking-wide uppercase text-blue-200 border border-white/15">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>Step 1 of 2 • Business Setup</span>
             </div>
-            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {isPremium
-                ? 'Unlimited invoices, custom logo, signature & zero ads active'
-                : `${monthlyInvoicesCount} of 5 free invoices used this month`}
+            <h2 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight">
+              Set up your business profile
+            </h2>
+            <p className="text-xs sm:text-sm text-blue-100 leading-relaxed">
+              Add your business name, GSTIN, address, and contact details to create professional GST invoices with instant UPI payment QR codes.
             </p>
           </div>
-        </div>
 
-        {!isPremium && (
-          <button
-            onClick={() => setCurrentTab('premium')}
-            className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer min-h-[44px] flex items-center justify-center"
-          >
-            Upgrade to Pro (From ₹49)
-          </button>
-        )}
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <button
+              onClick={() => setCurrentTab('business-profile')}
+              className="px-6 py-3 bg-white hover:bg-blue-50 text-blue-700 text-xs sm:text-sm font-bold rounded-2xl shadow-lg hover:shadow-xl transition active:scale-98 flex items-center gap-2 cursor-pointer min-h-[44px]"
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Add Business Profile</span>
+            </button>
+            <button
+              onClick={() => setDismissedOnboarding(true)}
+              className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-2xl transition cursor-pointer min-h-[44px]"
+            >
+              Do this later
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-xl shadow-md shrink-0">
+              {currentProfile?.logo_url ? (
+                <img src={currentProfile.logo_url} alt="Logo" className="w-full h-full object-cover rounded-2xl" />
+              ) : (
+                <span>{currentProfile?.name ? currentProfile.name.charAt(0).toUpperCase() : 'B'}</span>
+              )}
+            </div>
+
+            <div className="space-y-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight truncate max-w-sm">
+                  {currentProfile?.name || 'My Business'}
+                </h2>
+                {currentProfile?.gstin ? (
+                  <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-mono text-[10px] font-bold">
+                    GST: {currentProfile.gstin}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono text-[10px] font-medium">
+                    Unregistered GST
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                <span>{currentProfile?.address ? currentProfile.address.split(',')[0] : 'State: Delhi'}</span>
+                <span>•</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                  Profile {completionPercentage}% complete
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
+            <CompanySwitcher />
+            <button
+              onClick={() => setCurrentTab('business-profile')}
+              className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer min-h-[40px]"
+            >
+              <span>Profile</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. QUICK ACTIONS BAR */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <button
+          onClick={() => setCurrentTab('create-invoice')}
+          className="p-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition flex flex-col items-start gap-2 cursor-pointer active:scale-98 min-h-[88px]"
+        >
+          <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
+            <PlusCircle className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <div className="text-xs sm:text-sm font-black tracking-tight">Create Invoice</div>
+            <div className="text-[10px] text-blue-100">GST billing with UPI QR</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('customers')}
+          className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-700 transition flex flex-col items-start gap-2 cursor-pointer min-h-[88px]"
+        >
+          <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+            <Users className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Customers ({customersCount})</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">Manage client directory</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('products')}
+          className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-700 transition flex flex-col items-start gap-2 cursor-pointer min-h-[88px]"
+        >
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <Package className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">Products ({productsCount})</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">Item catalog & rates</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setCurrentTab('invoices')}
+          className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-700 transition flex flex-col items-start gap-2 cursor-pointer min-h-[88px]"
+        >
+          <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <FileText className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">All Invoices ({invoices.length})</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">View & download history</div>
+          </div>
+        </button>
       </div>
 
-      {/* Key Metrics Grid */}
+      {/* 3. BUSINESS METRICS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         {/* Metric 1 */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700 transition">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider">Total Billed</span>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Total Sales</span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
               <TrendingUp className="w-4 h-4" />
             </div>
@@ -206,15 +345,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
           <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
             {formatINR(totalBilled)}
           </div>
-          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 font-medium">
-            <span>{invoices.length} total invoices</span>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            Across {invoices.length} invoices
           </div>
         </div>
 
         {/* Metric 2 */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:border-emerald-300 dark:hover:border-emerald-700 transition">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider">Paid / Collected</span>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Collected / Paid</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
               <CheckCircle className="w-4 h-4" />
             </div>
@@ -228,9 +367,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
         </div>
 
         {/* Metric 3 */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:border-rose-300 dark:hover:border-rose-700 transition">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider">Pending Dues</span>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Pending Dues</span>
             <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center">
               <Clock className="w-4 h-4" />
             </div>
@@ -239,157 +378,137 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
             {formatINR(totalPending)}
           </div>
           <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
-            {invoices.filter(i => i.status === 'UNPAID' || i.status === 'OVERDUE').length} pending payment
+            {invoices.filter(i => i.status !== 'PAID').length} invoices pending
           </div>
         </div>
 
         {/* Metric 4 */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-700 transition">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2 sm:mb-3">
-            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider">Master Catalog</span>
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-              <Users className="w-4 h-4" />
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider">Total GST</span>
+            <div className="w-8 h-8 rounded-lg bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+              <Percent className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            {customersCount} <span className="text-xs font-normal text-slate-500">Party</span> / {productsCount} <span className="text-xs font-normal text-slate-500">Items</span>
+          <div className="text-xl sm:text-2xl font-black text-purple-600 dark:text-purple-400 tracking-tight">
+            {formatINR(totalGst)}
           </div>
-          <div className="text-[11px] text-blue-600 dark:text-blue-400 mt-1 font-semibold flex items-center gap-1">
-            <button onClick={() => setCurrentTab('customers')} className="hover:underline cursor-pointer">Manage Directory</button>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-medium">
+            CGST + SGST + IGST tax
           </div>
         </div>
       </div>
 
-      {/* Quick Setup Checklist if Profile or UPI is missing */}
-      {(!businessProfile?.gstin || !businessProfile?.upi_id || !businessProfile?.bank_name) && (
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800/60 rounded-2xl p-4 sm:p-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-1">
-              <h4 className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200 flex items-center gap-2">
-                <span>⚡ Complete your business profile for automatic QR codes</span>
-              </h4>
-              <p className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-300">
-                Add your GSTIN, UPI ID, and Bank Account so customers can scan and pay you directly.
-              </p>
-            </div>
-            <button
-              onClick={() => setCurrentTab('business-profile')}
-              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition shrink-0 cursor-pointer min-h-[40px]"
-            >
-              Configure Now
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Recent Invoices Section */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden transition-colors">
-        <div className="p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      {/* 4. RECENT INVOICES SECTION */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-5 sm:p-6 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">Recent Invoices</h3>
-            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">Your latest billed GST invoices</p>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Recent Invoices</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Latest billing activity for {activeCompany?.name || 'your business'}
+            </p>
           </div>
+
           <button
             onClick={() => setCurrentTab('invoices')}
-            className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 flex items-center gap-1 cursor-pointer min-h-[40px]"
+            className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
           >
-            <span>View All ({invoices.length})</span>
-            <ArrowUpRight className="w-3.5 h-3.5" />
+            <span>View All</span>
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
-        {loading ? (
-          <div className="p-8 space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-12 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse" />
-            ))}
-          </div>
-        ) : invoices.length === 0 ? (
-          <div className="p-12 text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400 mx-auto">
+        {invoices.length === 0 ? (
+          <div className="p-10 text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-xs">
               <FileText className="w-6 h-6" />
             </div>
             <div className="space-y-1">
               <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No invoices yet</h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                Create your very first GST invoice in less than 30 seconds.
+                Create your first GST invoice with automated tax calculations and instant WhatsApp sharing.
               </p>
             </div>
             <button
               onClick={() => setCurrentTab('create-invoice')}
-              className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 transition cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer min-h-[44px]"
             >
-              + Create First Invoice
+              <PlusCircle className="w-4 h-4" />
+              <span>Create First Invoice</span>
             </button>
           </div>
         ) : (
-          <>
-            {/* Desktop Table */}
+          <div>
+            {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="bg-slate-50/75 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    <th className="py-3 px-6">Invoice #</th>
-                    <th className="py-3 px-6">Customer</th>
-                    <th className="py-3 px-6">Date</th>
-                    <th className="py-3 px-6">Amount</th>
-                    <th className="py-3 px-6">Status</th>
-                    <th className="py-3 px-6 text-right">Actions</th>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="pb-3 pl-2">Invoice #</th>
+                    <th className="pb-3">Customer</th>
+                    <th className="pb-3">Date</th>
+                    <th className="pb-3">Amount</th>
+                    <th className="pb-3">Status</th>
+                    <th className="pb-3 text-right pr-2">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-200">
-                  {invoices.slice(0, 5).map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
-                      <td className="py-3.5 px-6 font-bold text-slate-900 dark:text-white font-mono">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {invoices.slice(0, 6).map(inv => (
+                    <tr key={inv.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/50 transition">
+                      <td className="py-3 pl-2 font-mono font-bold text-blue-600 dark:text-blue-400">
                         {inv.invoice_number}
                       </td>
-                      <td className="py-3.5 px-6 font-medium text-slate-900 dark:text-white">
+                      <td className="py-3 font-semibold text-slate-800 dark:text-slate-200">
                         {inv.customer?.name || 'Cash Customer'}
                       </td>
-                      <td className="py-3.5 px-6 text-slate-500 dark:text-slate-400">
-                        {inv.invoice_date}
+                      <td className="py-3 text-slate-500 dark:text-slate-400">
+                        {new Date(inv.invoice_date).toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric'
+                        })}
                       </td>
-                      <td className="py-3.5 px-6 font-bold text-slate-900 dark:text-white">
+                      <td className="py-3 font-black text-slate-900 dark:text-white">
                         {formatINR(inv.grand_total)}
                       </td>
-                      <td className="py-3.5 px-6">
-                        <div className="flex items-center gap-2">
-                          <Badge status={inv.status} size="sm" />
-                          {inv.status !== 'PAID' && (
-                            <button
-                              onClick={() => handleQuickStatusChange(inv.id, 'PAID')}
-                              className="text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 px-2 py-0.5 rounded-md font-semibold cursor-pointer"
-                            >
-                              Mark Paid
-                            </button>
-                          )}
-                        </div>
+                      <td className="py-3">
+                        <Badge status={inv.status} size="sm" />
                       </td>
-                      <td className="py-3.5 px-6 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="py-3 text-right pr-2">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
+                            title="Download PDF"
                             disabled={downloadingId === inv.id}
                             onClick={() => handleDownloadPDF(inv)}
-                            title="Download PDF"
-                            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
+                            className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
                           >
                             {downloadingId === inv.id ? (
-                              <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
                             ) : (
-                              <Download className="w-4 h-4" />
+                              <Download className="w-3.5 h-3.5" />
                             )}
                           </button>
                           <button
+                            title="WhatsApp PDF Share"
                             disabled={sharingId === inv.id}
                             onClick={() => handleShare(inv)}
-                            title="Share Actual PDF"
-                            className="p-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
+                            className="p-2 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
                           >
                             {sharingId === inv.id ? (
-                              <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
                             ) : (
-                              <Share2 className="w-4 h-4" />
+                              <Share2 className="w-3.5 h-3.5" />
                             )}
+                          </button>
+                          <button
+                            onClick={() => handleQuickStatusChange(inv.id, inv.status === 'PAID' ? 'UNPAID' : 'PAID')}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer min-h-[32px] ${
+                              inv.status === 'PAID'
+                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                                : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 border border-emerald-200 dark:border-emerald-800'
+                            }`}
+                          >
+                            {inv.status === 'PAID' ? 'Mark Unpaid' : 'Mark Paid'}
                           </button>
                         </div>
                       </td>
@@ -399,43 +518,59 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setCurrentTab }) =
               </table>
             </div>
 
-            {/* Mobile Card Layout */}
-            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+            {/* Mobile Cards View */}
+            <div className="md:hidden space-y-3">
               {invoices.slice(0, 5).map(inv => (
-                <div key={inv.id} className="p-4 space-y-2.5">
+                <div 
+                  key={inv.id} 
+                  className="p-4 bg-slate-50/70 dark:bg-slate-800/40 rounded-2xl border border-slate-200/60 dark:border-slate-800 space-y-3"
+                >
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">
+                      <span className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400">
                         {inv.invoice_number}
                       </span>
-                      <p className="text-[10px] text-slate-400">{inv.customer?.name || 'Cash Customer'}</p>
+                      <h4 className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">
+                        {inv.customer?.name || 'Cash Customer'}
+                      </h4>
                     </div>
+                    <Badge status={inv.status} size="sm" />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200/40 dark:border-slate-800 text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">
+                      {new Date(inv.invoice_date).toLocaleDateString('en-IN', {
+                        day: '2-digit',
+                        month: 'short'
+                      })}
+                    </span>
                     <span className="text-sm font-black text-slate-900 dark:text-white">
                       {formatINR(inv.grand_total)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between pt-1">
-                    <Badge status={inv.status} size="sm" />
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleDownloadPDF(inv)}
-                        className="p-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleShare(inv)}
-                        className="px-2.5 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold flex items-center gap-1"
-                      >
-                        <Share2 className="w-3.5 h-3.5" />
-                        <span>Share PDF</span>
-                      </button>
-                    </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => handleDownloadPDF(inv)}
+                      disabled={downloadingId === inv.id}
+                      className="flex-1 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer min-h-[40px]"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      onClick={() => handleShare(inv)}
+                      disabled={sharingId === inv.id}
+                      className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer min-h-[40px]"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>WhatsApp</span>
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>

@@ -338,12 +338,13 @@ export const PremiumPage: React.FC = () => {
             }`}
           >
             <div>
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Free Tier</span>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Free Starter</span>
               <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">₹0</div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Basic GST billing for testing</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Basic GST billing</p>
               <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300 mt-4">
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-600" /> Max 5 invoices / mo</li>
-                <li className="flex items-center gap-2 text-slate-400"><span>• Ads: ON</span></li>
+                <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-600" /> Up to 2 Business Profiles</li>
+                <li className="flex items-center gap-2 text-slate-400"><span>• Ads: ON (Standard)</span></li>
               </ul>
             </div>
           </div>
@@ -363,8 +364,9 @@ export const PremiumPage: React.FC = () => {
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Full Pro billing for 1 month</p>
               <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300 mt-4 font-medium">
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> Unlimited Invoices</li>
+                <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> <strong>Up to 3 Companies</strong></li>
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> <strong>Ads completely OFF</strong></li>
-                <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> Custom Logo & Signature</li>
+                <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> Logo & Digital Signature</li>
               </ul>
             </div>
           </div>
@@ -387,6 +389,7 @@ export const PremiumPage: React.FC = () => {
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Half-yearly peace of mind</p>
               <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300 mt-4 font-medium">
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-600" /> All Pro Features</li>
+                <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-600" /> <strong>Up to 3 Companies</strong></li>
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-600" /> <strong>Ads completely OFF</strong></li>
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-emerald-600" /> 15% Cost Savings</li>
               </ul>
@@ -411,6 +414,7 @@ export const PremiumPage: React.FC = () => {
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Full 1 year unlimited access</p>
               <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300 mt-4 font-medium">
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> Everything in Pro</li>
+                <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> <strong>Up to 4 Companies (Max)</strong></li>
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> <strong>Ads OFF (365 Days)</strong></li>
                 <li className="flex items-center gap-2"><Check className="w-3.5 h-3.5 text-blue-600" /> VIP WhatsApp Support</li>
               </ul>

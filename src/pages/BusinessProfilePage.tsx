@@ -12,10 +12,17 @@ import {
   Lock,
   History,
   Eye,
-  EyeOff
+  EyeOff,
+  Plus,
+  Trash2,
+  Check,
+  ArrowRight
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useAuth } from '../context/AuthContext';
+import { useCompany } from '../context/CompanyContext';
+import { useRouter } from '../context/RouterContext';
+import { Modal } from '../components/common/Modal';
 import { uploadBusinessImage } from '../utils/storage';
 import { isValidGSTIN, isValidIndianPhone, isValidIFSC, isValidUPI, isValidEmail, validateStrongPassword } from '../utils/validators';
 import { verifyGSTINWithBackend } from '../utils/gstinService';
@@ -29,8 +36,36 @@ export const BusinessProfilePage: React.FC = () => {
     updateBusinessProfile, 
     requestPasswordChangeOtp, 
     completePasswordChange,
-    fetchRecentActivityLogs 
+    fetchRecentActivityLogs,
+    isPremium,
+    planId 
   } = useAuth();
+  const { 
+    companies, 
+    activeCompany, 
+    maxCompanies, 
+    currentCount, 
+    isLimitReached, 
+    switchCompany, 
+    addCompany, 
+    updateCompany,
+    deleteCompany 
+  } = useCompany();
+  const { navigate } = useRouter();
+
+  // Multi-Company Add Modal State
+  const [showAddCompanyModal, setShowAddCompanyModal] = useState<boolean>(false);
+  const [showCompanyLimitModal, setShowCompanyLimitModal] = useState<boolean>(false);
+  const [newCompanyName, setNewCompanyName] = useState<string>('');
+  const [newCompanyGstin, setNewCompanyGstin] = useState<string>('');
+  const [newCompanyPhone, setNewCompanyPhone] = useState<string>('');
+  const [newCompanyEmail, setNewCompanyEmail] = useState<string>('');
+  const [newCompanyState, setNewCompanyState] = useState<string>('Delhi');
+  const [newCompanyAddress, setNewCompanyAddress] = useState<string>('');
+  const [addingCompany, setAddingCompany] = useState<boolean>(false);
+  const [addCompanyError, setAddCompanyError] = useState<string>('');
+  const [fetchingNewCompanyGst, setFetchingNewCompanyGst] = useState<boolean>(false);
+  const [newCompanyGstSuccess, setNewCompanyGstSuccess] = useState<string>('');
 
   // Form State
   const [name, setName] = useState<string>('');
@@ -85,7 +120,20 @@ export const BusinessProfilePage: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
-    if (businessProfile) {
+    if (activeCompany) {
+      setName(activeCompany.name || '');
+      setAddress(activeCompany.address || '');
+      setPhone(activeCompany.phone || '');
+      setEmail(activeCompany.email || '');
+      setGstin(activeCompany.gstin || '');
+      setBankName(activeCompany.bank_name || '');
+      setAccountNo(activeCompany.account_no || '');
+      setIfsc(activeCompany.ifsc || '');
+      setUpiId(activeCompany.upi_id || '');
+      setLogoUrl(activeCompany.logo_url || '');
+      setSignatureUrl(activeCompany.signature_url || '');
+      setTermsConditions(activeCompany.terms_conditions || '');
+    } else if (businessProfile) {
       setName(businessProfile.name || '');
       setAddress(businessProfile.address || '');
       setPhone(businessProfile.phone || '');
@@ -99,7 +147,7 @@ export const BusinessProfilePage: React.FC = () => {
       setSignatureUrl(businessProfile.signature_url || '');
       setTermsConditions(businessProfile.terms_conditions || '');
     }
-  }, [businessProfile]);
+  }, [activeCompany, businessProfile]);
 
   // Generate Preview UPI QR
   useEffect(() => {
@@ -112,6 +160,87 @@ export const BusinessProfilePage: React.FC = () => {
       setTestQrUrl('');
     }
   }, [upiId, name]);
+
+  const handleOpenAddCompany = () => {
+    if (isLimitReached) {
+      setShowCompanyLimitModal(true);
+    } else {
+      setNewCompanyName('');
+      setNewCompanyGstin('');
+      setNewCompanyPhone('');
+      setNewCompanyEmail('');
+      setNewCompanyState('Delhi');
+      setNewCompanyAddress('');
+      setAddCompanyError('');
+      setNewCompanyGstSuccess('');
+      setShowAddCompanyModal(true);
+    }
+  };
+
+  const handleFetchNewCompanyGst = async () => {
+    if (!newCompanyGstin.trim()) {
+      setAddCompanyError('Please enter a 15-digit GSTIN number first.');
+      return;
+    }
+    setFetchingNewCompanyGst(true);
+    setAddCompanyError('');
+    setNewCompanyGstSuccess('');
+    const res = await verifyGSTINWithBackend(newCompanyGstin);
+    setFetchingNewCompanyGst(false);
+
+    if (res.success && res.data) {
+      if (res.data.company_name) setNewCompanyName(res.data.company_name);
+      if (res.data.address) setNewCompanyAddress(res.data.address);
+      if (res.data.state) setNewCompanyState(res.data.state);
+      setNewCompanyGstSuccess(`✓ Verified GST: ${res.data.company_name || 'Details auto-filled'}`);
+    } else {
+      setAddCompanyError(res.error || 'Could not verify GSTIN. You can enter details manually.');
+    }
+  };
+
+  const handleSaveNewCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddCompanyError('');
+    if (!newCompanyName.trim()) {
+      setAddCompanyError('Company / Business Name is required.');
+      return;
+    }
+
+    setAddingCompany(true);
+    const res = await addCompany({
+      name: newCompanyName.trim(),
+      gstin: newCompanyGstin.trim().toUpperCase(),
+      phone: newCompanyPhone.trim(),
+      email: newCompanyEmail.trim(),
+      state: newCompanyState.trim(),
+      address: newCompanyAddress.trim()
+    });
+    setAddingCompany(false);
+
+    if (res.error) {
+      setAddCompanyError(res.error);
+    } else {
+      setShowAddCompanyModal(false);
+      setSuccessMessage(`Successfully switched to ${newCompanyName.trim()}!`);
+      setTimeout(() => setSuccessMessage(''), 4000);
+    }
+  };
+
+  const handleDeleteCompany = async (id: string, compName: string) => {
+    if (companies.length <= 1) {
+      setErrorMessage('You must have at least one active business profile.');
+      return;
+    }
+    if (window.confirm(`Are you sure you want to remove "${compName}" from your managed companies?`)) {
+      const res = await deleteCompany(id);
+      if (res.error) {
+        setErrorMessage(res.error);
+      } else {
+        setSuccessMessage(`Removed "${compName}".`);
+        setTimeout(() => setSuccessMessage(''), 3000);
+      }
+    }
+  };
 
   const handleFetchGstDetails = async () => {
     setErrorMessage('');
@@ -195,6 +324,25 @@ export const BusinessProfilePage: React.FC = () => {
     }
 
     setSaving(true);
+    
+    // Save to multi-company context
+    if (activeCompany) {
+      await updateCompany(activeCompany.id, {
+        name: name.trim(),
+        address: address.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        gstin: gstin.trim().toUpperCase(),
+        bank_name: bankName.trim(),
+        account_no: accountNo.trim(),
+        ifsc: ifsc.trim().toUpperCase(),
+        upi_id: upiId.trim().toLowerCase(),
+        logo_url: logoUrl,
+        signature_url: signatureUrl,
+        terms_conditions: termsConditions.trim()
+      });
+    }
+
     const { error } = await updateBusinessProfile({
       name: name.trim(),
       address: address.trim(),
@@ -307,6 +455,118 @@ export const BusinessProfilePage: React.FC = () => {
           <span>{successMessage}</span>
         </div>
       )}
+
+      {/* Top Multi-Company Profiles Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs p-5 sm:p-7 space-y-4 transition-colors">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <div className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Managed Companies & Profiles</h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                {currentCount} of {maxCompanies} Used
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Switch active company to generate invoices, download PDFs, and print corresponding GST / UPI details.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleOpenAddCompany}
+            className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer min-h-[40px] shrink-0 ${
+              isLimitReached
+                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-800'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+            }`}
+          >
+            {isLimitReached ? (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Limit Reached ({currentCount}/{maxCompanies}) • Upgrade</span>
+              </>
+            ) : (
+              <>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Company ({currentCount}/{maxCompanies})</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Company Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {companies.map(c => {
+            const isActive = activeCompany?.id === c.id;
+            return (
+              <div
+                key={c.id}
+                onClick={() => switchCompany(c.id)}
+                className={`p-3.5 rounded-2xl border transition text-left cursor-pointer relative group flex flex-col justify-between ${
+                  isActive
+                    ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 ring-2 ring-blue-500/20 shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                      }`}>
+                        {c.name ? c.name.charAt(0).toUpperCase() : 'B'}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {c.name}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">
+                          {c.gstin ? `GST: ${c.gstin}` : 'No GSTIN'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {isActive && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-white dark:bg-blue-900/60 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-700 shadow-2xs shrink-0">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        <span>Active</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-2 line-clamp-1">
+                    {c.address || c.phone || 'No additional details set'}
+                  </p>
+                </div>
+
+                <div className="mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-slate-400">
+                    {isActive ? 'Editing Profile Details' : 'Click to Switch'}
+                  </span>
+
+                  {companies.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCompany(c.id, c.name);
+                      }}
+                      className="text-slate-400 hover:text-rose-600 p-1 transition cursor-pointer"
+                      title="Remove company"
+                      aria-label="Remove company"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Card 1: Business Identity & GST */}
@@ -649,6 +909,173 @@ export const BusinessProfilePage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Add Company Modal */}
+      <Modal
+        isOpen={showAddCompanyModal}
+        onClose={() => setShowAddCompanyModal(false)}
+        title="Add New Business / Company Profile"
+      >
+        <form onSubmit={handleSaveNewCompany} className="space-y-4 text-xs">
+          {addCompanyError && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{addCompanyError}</span>
+            </div>
+          )}
+
+          {newCompanyGstSuccess && (
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-xl flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{newCompanyGstSuccess}</span>
+            </div>
+          )}
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-bold text-slate-700 dark:text-slate-300">GSTIN Number (Optional)</label>
+              <button
+                type="button"
+                disabled={fetchingNewCompanyGst || !newCompanyGstin}
+                onClick={handleFetchNewCompanyGst}
+                className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 disabled:opacity-40 flex items-center gap-1 cursor-pointer"
+              >
+                {fetchingNewCompanyGst ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+                <span>{fetchingNewCompanyGst ? 'Verifying...' : '⚡ Auto-Fetch Company'}</span>
+              </button>
+            </div>
+            <input
+              type="text"
+              maxLength={15}
+              value={newCompanyGstin}
+              onChange={e => setNewCompanyGstin(e.target.value.toUpperCase())}
+              placeholder="07AAAAA0000A1Z5"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-mono text-slate-900 dark:text-slate-100"
+            />
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Business / Company Name *</label>
+            <input
+              type="text"
+              required
+              value={newCompanyName}
+              onChange={e => setNewCompanyName(e.target.value)}
+              placeholder="e.g. Ramesh Trading Enterprises"
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-900 dark:text-slate-100"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
+              <input
+                type="text"
+                value={newCompanyPhone}
+                onChange={e => setNewCompanyPhone(e.target.value)}
+                placeholder="9876543210"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">State / Province</label>
+              <input
+                type="text"
+                value={newCompanyState}
+                onChange={e => setNewCompanyState(e.target.value)}
+                placeholder="Delhi"
+                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Registered Address</label>
+            <textarea
+              rows={2}
+              value={newCompanyAddress}
+              onChange={e => setNewCompanyAddress(e.target.value)}
+              placeholder="Shop No. 12, Main Market, City..."
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowAddCompanyModal(false)}
+              className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={addingCompany}
+              className="flex-1 py-2.5 font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl disabled:opacity-50 cursor-pointer"
+            >
+              {addingCompany ? 'Creating...' : 'Save & Switch Company'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Company Limit Reached Modal */}
+      <Modal
+        isOpen={showCompanyLimitModal}
+        onClose={() => setShowCompanyLimitModal(false)}
+        title="Company Limit Reached"
+      >
+        <div className="space-y-4 text-center py-2">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xs border border-amber-200 dark:border-amber-800">
+            <Sparkles className="w-7 h-7" />
+          </div>
+
+          <div>
+            <h4 className="text-base font-bold text-slate-900 dark:text-white">
+              You've used all {maxCompanies} company profiles
+            </h4>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5 max-w-sm mx-auto">
+              Your current <strong>{isPremium ? 'Pro Plan' : 'Free Starter'}</strong> allows managing up to <strong>{maxCompanies} businesses</strong>. Upgrade your plan to manage more companies with zero ads and watermark-free invoices.
+            </p>
+          </div>
+
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl text-xs space-y-1 text-left border border-slate-200 dark:border-slate-700">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Free Starter:</span>
+              <span className="font-bold text-slate-700 dark:text-slate-300">Max 2 Companies</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Monthly Pro (₹49):</span>
+              <span className="font-bold text-blue-600 dark:text-blue-400">Max 3 Companies</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Yearly Pro (₹470):</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400">Max 4 Companies (Best Value)</span>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowCompanyLimitModal(false)}
+              className="flex-1 py-2.5 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-xl cursor-pointer"
+            >
+              Maybe Later
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCompanyLimitModal(false);
+                navigate('premium');
+              }}
+              className="flex-1 py-2.5 font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>Upgrade Plan</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

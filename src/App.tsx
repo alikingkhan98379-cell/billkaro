@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CompanyProvider } from './context/CompanyContext';
 import { NotificationProvider, useNotifications } from './context/NotificationContext';
 import { RouterProvider, useRouter } from './context/RouterContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -96,11 +97,13 @@ export function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <NotificationProvider>
-            <RouterProvider>
-              <AppContent />
-            </RouterProvider>
-          </NotificationProvider>
+          <CompanyProvider>
+            <NotificationProvider>
+              <RouterProvider>
+                <AppContent />
+              </RouterProvider>
+            </NotificationProvider>
+          </CompanyProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

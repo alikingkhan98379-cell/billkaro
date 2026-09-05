@@ -10,6 +10,8 @@ export interface PlanConfig {
   durationDays: number;
   discountPercent: number;
   adsEnabled: boolean;
+  watermarkEnabled: boolean;
+  maxCompanies: number;
   badge?: string;
   description: string;
   features: string[];
@@ -31,13 +33,17 @@ export const PLANS_CONFIG: Record<PlanId, PlanConfig> = {
     durationDays: 0,
     discountPercent: 0,
     adsEnabled: true,
+    watermarkEnabled: true,
+    maxCompanies: 2,
     description: 'Essential billing for new businesses & sole proprietors',
     features: [
+      'Up to 2 Companies / Businesses',
       'Up to 5 invoices per month',
       'Standard GST Tax calculation',
       'Customer & Product catalog',
-      'Standard PDF invoices',
-      'Basic Email Support'
+      'Standard PDF invoices with Watermark',
+      'WhatsApp invoice sharing',
+      'Ads Enabled'
     ]
   },
   monthly: {
@@ -47,15 +53,17 @@ export const PLANS_CONFIG: Record<PlanId, PlanConfig> = {
     durationDays: 30,
     discountPercent: 0,
     adsEnabled: false,
+    watermarkEnabled: false,
+    maxCompanies: 3,
     description: 'Flexible monthly billing with complete ad-free Pro features',
     features: [
+      'Up to 3 Companies / Businesses',
       'Unlimited GST & Non-GST Invoices',
       'Ads completely OFF',
+      'No BillKaro Watermark',
       'Upload Custom Logo & Signature',
       'Dynamic UPI QR Code on Invoices',
-      '1-Click WhatsApp Sharing',
-      'Customer Ledger & Balance Tracking',
-      'Inventory & Low Stock Alerts'
+      '1-Click WhatsApp PDF Sharing'
     ]
   },
   six_months: {
@@ -65,15 +73,18 @@ export const PLANS_CONFIG: Record<PlanId, PlanConfig> = {
     durationDays: 180,
     discountPercent: 15,
     adsEnabled: false,
+    watermarkEnabled: false,
+    maxCompanies: 3,
     badge: 'Save 15%',
     description: 'Half-yearly plan with 15% discount for growing businesses',
     features: [
+      'Up to 3 Companies / Businesses',
       'Everything in Monthly Pro',
       'Ads completely OFF (180 Days)',
+      'No BillKaro Watermark',
       '15% Cost Savings',
       'Unlimited Invoices & Estimates',
-      'Priority Customer Support',
-      'Bulk Excel Export & Reports'
+      'Priority Customer Support'
     ]
   },
   yearly: {
@@ -83,16 +94,18 @@ export const PLANS_CONFIG: Record<PlanId, PlanConfig> = {
     durationDays: 365,
     discountPercent: 20,
     adsEnabled: false,
+    watermarkEnabled: false,
+    maxCompanies: 4,
     badge: 'Best Value • Save 20%',
     description: 'Annual peace of mind with maximum 20% discount',
     features: [
+      'Up to 4 Companies / Businesses (Maximum)',
       'Everything in Pro Suite (365 Days)',
       'Ads completely OFF for 1 Full Year',
+      'No BillKaro Watermark',
       'Maximum 20% Cost Savings',
-      'Unlimited Invoices, Estimates & Quotes',
-      'Custom Invoice Numbering Series',
-      'VIP Priority Phone & WhatsApp Support',
-      'Early Access to New GST Tools'
+      'Unlimited Invoices & Quotes',
+      'VIP Priority Phone & WhatsApp Support'
     ]
   }
 };

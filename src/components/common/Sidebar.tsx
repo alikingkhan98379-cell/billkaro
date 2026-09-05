@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { AppRoute, useRouter } from '../../context/RouterContext';
+import { CompanySwitcher } from './CompanySwitcher';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -80,6 +81,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+
+          {/* Company Switcher for Mobile Drawer */}
+          <div className="lg:hidden pb-1">
+            <CompanySwitcher className="w-full" />
           </div>
 
           <nav className="space-y-1">
